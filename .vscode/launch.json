@@ -1,0 +1,41 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Main",
+            "type": "python",
+            "request": "launch",
+            "program": "src/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}:${PYTHONPATH}",
+                "LOG_LEVEL": "DEBUG",
+            }
+        },
+        {
+            "name": "FS25 OSM to SLY (Production)",
+            "type": "python",
+            "request": "launch",
+            "program": "src/osm_to_sly.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}:${PYTHONPATH}",
+                "LOG_LEVEL": "DEBUG",
+            }
+        },
+        {
+            "name": "SLY to OSM",
+            "type": "python",
+            "request": "launch",
+            "program": "src/sly_to_osm.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}:${PYTHONPATH}",
+                "LOG_LEVEL": "DEBUG",
+            }
+        }
+    ]
+}

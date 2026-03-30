@@ -1,0 +1,54 @@
+[
+  {
+    "name": "forest",
+    "geometry": "polygon",
+    "tags": {
+      "natural": "wood",
+      "landuse": "forest",
+      "landcover": "trees"
+    },
+    "color": [34, 139, 34]
+  },
+  {
+    "name": "field",
+    "geometry": "polygon",
+    "tags": {
+      "landuse": ["farmland", "meadow", "grass"]
+    },
+    "color": [218, 165, 32]
+  },
+  {
+    "name": "road_main",
+    "geometry": "line",
+    "tags": {
+      "highway": ["motorway", "trunk", "primary", "secondary", "tertiary"]
+    },
+    "buffer_m": 5.0,
+    "color": [240, 93, 66]
+  },
+  {
+    "name": "road_minor",
+    "geometry": "line",
+    "tags": {
+      "highway": ["residential", "unclassified", "service", "track", "road"]
+    },
+    "buffer_m": 3.0,
+    "color": [255, 170, 120]
+  },
+  {
+    "name": "water",
+    "geometry": "polygon",
+    "tags": {
+      "natural": "water"
+    },
+    "color": [0, 130, 200]
+  },
+  {
+    "name": "building",
+    "geometry": "polygon",
+    "tags": {
+      "building": true
+    },
+    "color": [180, 180, 180]
+  }
+]

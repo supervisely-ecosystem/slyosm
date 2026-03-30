@@ -1,0 +1,9 @@
+supervisely
+python-dotenv
+pygmdl
+osmnx
+shapely
+pyproj
+numpy
+Pillow
+scikit-image
