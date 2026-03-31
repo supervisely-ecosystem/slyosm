@@ -1,41 +1,50 @@
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Set, Tuple
 
 import numpy as np
 import osmnx as ox
 import supervisely as sly
-from shapely.geometry import Point
-from shapely.ops import unary_union
-from shapely.prepared import prep
 
-from main import (
-    BASE_DIR,
-    CONFIG_PATH,
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from satellite_osm_downloader.src.slyosm.geometry import SceneRequest
+from satellite_osm_downloader.src.slyosm.osm_config import (
     OSMClassSpec,
-    ensure_output_dirs,
-    load_environment,
+    ensure_project_meta_has_classes,
     load_osm_class_specs,
+)
+from satellite_osm_downloader.src.slyosm.sampling import (
+    build_area_polygon_wgs84,
+    coordinate_key,
+    generate_random_coordinates,
+)
+from satellite_osm_downloader.src.slyosm.scene_downloader import (
     process_scene,
+    save_dataset_custom_data,
+)
+from satellite_osm_downloader.src.slyosm.settings import (
+    OSM_CLASSES_PATH,
+    SAMPLING_STATE_DIR,
+    ensure_data_directories,
+    load_environment,
+    read_optional_int_env,
 )
 
-# Production job settings.
 PROJECT_NAME = "Training Data (RAW)"
 RANDOM_SEED = 20260330
-COORD_KEY_DECIMALS = 6
-MAX_SAMPLE_ATTEMPTS_PER_IMAGE = 300
-
-# Scene defaults.
-DEFAULT_SCENE_SIZE_M = 1024
-DEFAULT_ZOOM = 18
 ROTATION_MIN_DEG = -90
 ROTATION_MAX_DEG = 90
+DEFAULT_SCENE_SIZE_M = 1024
+DEFAULT_ZOOM = 18
 
-# Extend this list for other countries.
-COUNTRY_RUNS: list[dict[str, Any]] = [
+COUNTRY_RUNS: List[Dict[str, Any]] = [
     {
         "key": "germany",
         "query": "Germany",
@@ -46,11 +55,11 @@ COUNTRY_RUNS: list[dict[str, Any]] = [
     }
 ]
 
-SAMPLE_STATE_DIR = BASE_DIR / "data" / "meta" / "sampling"
-
 
 @dataclass(frozen=True)
 class CountryRun:
+    """Legacy production sampling configuration for one area query."""
+
     key: str
     query: str
     dataset_name: str
@@ -59,44 +68,27 @@ class CountryRun:
     zoom: int
 
 
-def parse_country_runs(raw_runs: list[dict[str, Any]]) -> list[CountryRun]:
-    result: list[CountryRun] = []
-    for raw in raw_runs:
-        result.append(
+def parse_country_runs(raw_runs: List[Dict[str, Any]]) -> List[CountryRun]:
+    """Parse legacy country-run dictionaries into typed records."""
+
+    runs = []
+    for raw_run in raw_runs:
+        runs.append(
             CountryRun(
-                key=str(raw["key"]).strip().lower(),
-                query=str(raw["query"]),
-                dataset_name=str(raw["dataset_name"]),
-                target_images=int(raw["target_images"]),
-                size_m=int(raw.get("size_m", DEFAULT_SCENE_SIZE_M)),
-                zoom=int(raw.get("zoom", DEFAULT_ZOOM)),
+                key=str(raw_run["key"]).strip().lower(),
+                query=str(raw_run["query"]),
+                dataset_name=str(raw_run["dataset_name"]),
+                target_images=int(raw_run["target_images"]),
+                size_m=int(raw_run.get("size_m", DEFAULT_SCENE_SIZE_M)),
+                zoom=int(raw_run.get("zoom", DEFAULT_ZOOM)),
             )
         )
-    return result
+    return runs
 
 
-def ensure_project_with_classes(
-    api: sly.Api,
-    workspace_id: int,
-    class_specs: list[OSMClassSpec],
-) -> tuple[Any, sly.ProjectMeta]:
-    project_info = api.project.get_or_create(workspace_id, PROJECT_NAME)
+def load_state(path: Path) -> Tuple[Set[str], int]:
+    """Load persisted random-sampling state from disk."""
 
-    project_meta = sly.ProjectMeta.from_json(api.project.get_meta(project_info.id))
-    changed = False
-    for spec in class_specs:
-        if project_meta.get_obj_class(spec.name) is None:
-            obj_class = sly.ObjClass(spec.name, sly.Bitmap, color=spec.color)
-            project_meta = project_meta.add_obj_class(obj_class)
-            changed = True
-
-    if changed:
-        project_meta = api.project.update_meta(project_info.id, project_meta)
-
-    return project_info, project_meta
-
-
-def load_state(path: Path) -> tuple[set[str], int]:
     if not path.exists():
         return set(), 1
 
@@ -105,139 +97,104 @@ def load_state(path: Path) -> tuple[set[str], int]:
 
     used_keys = set(payload.get("used_keys", []))
     next_index = int(payload.get("next_index", len(used_keys) + 1))
-    next_index = max(1, next_index)
-    return used_keys, next_index
+    return used_keys, max(1, next_index)
 
 
-def save_state(path: Path, used_keys: set[str], next_index: int) -> None:
-    payload = {
-        "used_keys": sorted(used_keys),
-        "next_index": int(next_index),
-    }
+def save_state(path: Path, used_keys: Set[str], next_index: int) -> None:
+    """Persist random-sampling state to disk."""
+
+    payload = {"used_keys": sorted(used_keys), "next_index": int(next_index)}
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as file:
         json.dump(payload, file, indent=2)
 
 
-def build_country_polygon_wgs84(country_query: str):
-    gdf = ox.geocode_to_gdf(country_query)
-    if gdf.empty:
-        raise RuntimeError(f"Country query returned no geometry: {country_query}")
+def ensure_project(
+    api: sly.Api, workspace_id: int, class_specs: List[OSMClassSpec]
+) -> Tuple[Any, sly.ProjectMeta]:
+    """Resolve or create the legacy production project."""
 
-    polygon = unary_union([geom for geom in gdf.geometry if geom is not None])
-    if polygon.is_empty:
-        raise RuntimeError(f"Country geometry is empty: {country_query}")
-
-    if not polygon.is_valid:
-        polygon = polygon.buffer(0)
-    if polygon.is_empty:
-        raise RuntimeError(
-            f"Country geometry is invalid after cleanup: {country_query}"
+    project_id = read_optional_int_env("PROJECT_ID")
+    if project_id is not None:
+        project_info = api.project.get_info_by_id(project_id)
+        if project_info is None:
+            raise RuntimeError(
+                "Project with id={project_id} was not found.".format(
+                    project_id=project_id
+                )
+            )
+    else:
+        project_info = api.project.create(
+            workspace_id, PROJECT_NAME, change_name_if_conflict=True
         )
 
-    return polygon
-
-
-def coordinate_key(lat: float, lon: float) -> str:
-    return f"{lat:.{COORD_KEY_DECIMALS}f},{lon:.{COORD_KEY_DECIMALS}f}"
-
-
-def generate_random_scenes(
-    country: CountryRun,
-    country_polygon,
-    used_keys: set[str],
-    next_index: int,
-    count: int,
-    rng: np.random.Generator,
-) -> tuple[list[dict[str, Any]], list[str]]:
-    if count <= 0:
-        return [], []
-
-    prepared = prep(country_polygon)
-    min_lon, min_lat, max_lon, max_lat = country_polygon.bounds
-
-    scenes: list[dict[str, Any]] = []
-    keys: list[str] = []
-    planned_keys: set[str] = set()
-
-    max_attempts = count * MAX_SAMPLE_ATTEMPTS_PER_IMAGE
-    attempts = 0
-
-    while len(scenes) < count and attempts < max_attempts:
-        attempts += 1
-
-        lon = float(rng.uniform(min_lon, max_lon))
-        lat = float(rng.uniform(min_lat, max_lat))
-        point = Point(lon, lat)
-        if not prepared.contains(point):
-            continue
-
-        key = coordinate_key(lat, lon)
-        if key in used_keys or key in planned_keys:
-            continue
-
-        planned_keys.add(key)
-
-        scene_index = next_index + len(scenes)
-        scene = {
-            "id": f"{country.key}_{scene_index:06d}",
-            "center_lat": lat,
-            "center_lon": lon,
-            "size_m": country.size_m,
-            "rotation_deg": int(rng.integers(ROTATION_MIN_DEG, ROTATION_MAX_DEG + 1)),
-            "zoom": country.zoom,
-            "coord_key": key,
-        }
-        scenes.append(scene)
-        keys.append(key)
-
-    if len(scenes) < count:
-        raise RuntimeError(
-            f"Failed to sample enough unique points for {country.key}: "
-            f"requested={count}, sampled={len(scenes)}, attempts={attempts}"
-        )
-
-    return scenes, keys
+    project_meta = sly.ProjectMeta.from_json(api.project.get_meta(project_info.id))
+    updated_meta = ensure_project_meta_has_classes(project_meta, class_specs)
+    if updated_meta != project_meta:
+        project_meta = api.project.update_meta(project_info.id, updated_meta)
+    return project_info, project_meta
 
 
 def process_country_run(
     api: sly.Api,
     project_id: int,
     project_meta: sly.ProjectMeta,
-    class_specs: list[OSMClassSpec],
+    class_specs: List[OSMClassSpec],
     country: CountryRun,
     rng: np.random.Generator,
 ) -> None:
+    """Run the legacy random sampling workflow for one configured area."""
+
     dataset_info = api.dataset.get_or_create(project_id, country.dataset_name)
+    save_dataset_custom_data(api, dataset_info.id, class_specs)
 
-    state_path = SAMPLE_STATE_DIR / f"{country.key}.json"
+    state_path = SAMPLING_STATE_DIR / "{key}.json".format(key=country.key)
     used_keys, next_index = load_state(state_path)
-
     remaining = max(0, country.target_images - len(used_keys))
+
     print(
-        f"[{country.key}] dataset_id={dataset_info.id} "
-        f"existing={len(used_keys)} target={country.target_images} remaining={remaining}",
+        "[{key}] dataset_id={dataset_id} existing={existing} target={target} remaining={remaining}".format(
+            key=country.key,
+            dataset_id=dataset_info.id,
+            existing=len(used_keys),
+            target=country.target_images,
+            remaining=remaining,
+        ),
         flush=True,
     )
     if remaining == 0:
-        print(f"[{country.key}] Target already reached. Skipping.", flush=True)
+        print(
+            "[{key}] Target already reached. Skipping.".format(key=country.key),
+            flush=True,
+        )
         return
 
-    print(f"[{country.key}] Resolving country boundary for sampling...", flush=True)
-    country_polygon = build_country_polygon_wgs84(country.query)
-
-    scenes, _ = generate_random_scenes(
-        country=country,
-        country_polygon=country_polygon,
-        used_keys=used_keys,
-        next_index=next_index,
-        count=remaining,
-        rng=rng,
+    area_polygon = build_area_polygon_wgs84(country.query)
+    coordinates = generate_random_coordinates(
+        area_polygon, remaining, rng, used_keys=used_keys
     )
+
+    scene_key_by_id = {}
+    scenes = []
+    for lat, lon in coordinates:
+        key = coordinate_key(lat, lon)
+        scene_id = "{key}_{index:06d}".format(
+            key=country.key, index=next_index + len(scenes)
+        )
+        scene_key_by_id[scene_id] = key
+        scenes.append(
+            SceneRequest(
+                identifier=scene_id,
+                center_lat=float(lat),
+                center_lon=float(lon),
+                size_m=country.size_m,
+                rotation_deg=int(rng.integers(ROTATION_MIN_DEG, ROTATION_MAX_DEG + 1)),
+                zoom=country.zoom,
+            )
+        )
 
     uploaded = 0
     for scene in scenes:
-        scene_key = str(scene["coord_key"])
         try:
             process_scene(
                 api=api,
@@ -245,57 +202,68 @@ def process_country_run(
                 project_meta=project_meta,
                 class_specs=class_specs,
                 scene=scene,
+                download_osm=True,
             )
         except Exception as exc:
             print(
-                f"[{country.key}] Failed scene_id={scene['id']} "
-                f"lat={scene['center_lat']:.6f} lon={scene['center_lon']:.6f}: {exc}",
+                "[{key}] Failed scene_id={scene_id} lat={lat:.6f} lon={lon:.6f}: {error}".format(
+                    key=country.key,
+                    scene_id=scene.identifier,
+                    lat=scene.center_lat,
+                    lon=scene.center_lon,
+                    error=exc,
+                ),
                 flush=True,
             )
             continue
 
         uploaded += 1
-        used_keys.add(scene_key)
+        used_keys.add(scene_key_by_id[scene.identifier])
         next_index += 1
         save_state(state_path, used_keys, next_index)
 
         if uploaded % 25 == 0:
             print(
-                f"[{country.key}] progress uploaded={uploaded}/{remaining}",
+                "[{key}] progress uploaded={uploaded}/{remaining}".format(
+                    key=country.key,
+                    uploaded=uploaded,
+                    remaining=remaining,
+                ),
                 flush=True,
             )
 
     print(
-        f"[{country.key}] Completed uploaded={uploaded}/{remaining}. "
-        f"Total unique coords tracked={len(used_keys)}",
+        "[{key}] Completed uploaded={uploaded}/{remaining}. Total unique coords tracked={total}".format(
+            key=country.key,
+            uploaded=uploaded,
+            remaining=remaining,
+            total=len(used_keys),
+        ),
         flush=True,
     )
 
 
 def main() -> None:
-    load_environment()
-    ensure_output_dirs()
-    SAMPLE_STATE_DIR.mkdir(parents=True, exist_ok=True)
+    """Run the legacy random import workflow using the refactored modules."""
 
+    load_environment()
+    ensure_data_directories()
+    SAMPLING_STATE_DIR.mkdir(parents=True, exist_ok=True)
     ox.settings.use_cache = True
 
     api = sly.Api.from_env()
     workspace_id = sly.env.workspace_id()
-
-    class_specs = load_osm_class_specs(CONFIG_PATH)
+    class_specs = load_osm_class_specs(OSM_CLASSES_PATH)
     country_runs = parse_country_runs(COUNTRY_RUNS)
 
-    project_info, project_meta = ensure_project_with_classes(
-        api=api,
-        workspace_id=workspace_id,
-        class_specs=class_specs,
-    )
-
+    project_info, project_meta = ensure_project(api, workspace_id, class_specs)
     rng = np.random.default_rng(RANDOM_SEED)
 
     print(
-        f"Production generation started for project='{PROJECT_NAME}' "
-        f"countries={len(country_runs)}",
+        "Production generation started for project='{name}' areas={count}".format(
+            name=project_info.name,
+            count=len(country_runs),
+        ),
         flush=True,
     )
 

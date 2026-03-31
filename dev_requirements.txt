@@ -7,3 +7,4 @@ pyproj
 numpy
 Pillow
 scikit-image
+opencv-python

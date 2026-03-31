@@ -2,39 +2,80 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Main",
+            "name": "Legacy Main",
             "type": "python",
             "request": "launch",
-            "program": "src/main.py",
+            "program": "${workspaceFolder}/src/main.py",
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/local.env",
             "console": "integratedTerminal",
             "justMyCode": true,
             "env": {
-                "PYTHONPATH": "${workspaceFolder}:${PYTHONPATH}",
-                "LOG_LEVEL": "DEBUG",
+                "PYTHONPATH": "${workspaceFolder}",
+                "LOG_LEVEL": "DEBUG"
             }
         },
         {
-            "name": "FS25 OSM to SLY (Production)",
+            "name": "Legacy Random Downloader",
             "type": "python",
             "request": "launch",
-            "program": "src/osm_to_sly.py",
+            "program": "${workspaceFolder}/src/osm_to_sly.py",
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/local.env",
             "console": "integratedTerminal",
             "justMyCode": true,
             "env": {
-                "PYTHONPATH": "${workspaceFolder}:${PYTHONPATH}",
-                "LOG_LEVEL": "DEBUG",
+                "PYTHONPATH": "${workspaceFolder}",
+                "LOG_LEVEL": "DEBUG"
             }
         },
         {
-            "name": "SLY to OSM",
+            "name": "Legacy Export Single Image",
             "type": "python",
             "request": "launch",
-            "program": "src/sly_to_osm.py",
+            "program": "${workspaceFolder}/src/sly_to_osm.py",
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/local.env",
             "console": "integratedTerminal",
             "justMyCode": true,
             "env": {
-                "PYTHONPATH": "${workspaceFolder}:${PYTHONPATH}",
-                "LOG_LEVEL": "DEBUG",
+                "PYTHONPATH": "${workspaceFolder}",
+                "LOG_LEVEL": "DEBUG"
+            }
+        },
+        {
+            "name": "App: Satellite And OSM Downloader",
+            "type": "python",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "satellite_osm_downloader.src.main:app",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "8000"
+            ],
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/satellite_osm_downloader/local.env",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "LOG_LEVEL": "DEBUG"
+            }
+        },
+        {
+            "name": "App: Export To OSM",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/export_to_osm/src/main.py",
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/export_to_osm/local.env",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "LOG_LEVEL": "DEBUG"
             }
         }
     ]

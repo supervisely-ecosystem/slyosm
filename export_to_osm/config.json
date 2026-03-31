@@ -1,0 +1,14 @@
+{
+  "type": "app",
+  "version": "2.0.0",
+  "name": "Export To OSM",
+  "description": "Export Supervisely image datasets with geo metadata to OSM XML archives.",
+  "categories": ["export", "images", "data operations"],
+  "headless": true,
+  "entrypoint": "python src/main.py",
+  "context_menu": {
+    "context_category": "Export",
+    "target": ["images_dataset"]
+  },
+  "task_location": "workspace_tasks"
+}

@@ -1,5 +1,5 @@
 {
-  "python.defaultInterpreterPath": ".venv/bin/python",
+  "python.defaultInterpreterPath": ".venv/Scripts/python.exe",
   "files.exclude": {
     "**/__pycache__": true
   },
@@ -18,7 +18,7 @@
   "[python]": {
     "editor.defaultFormatter": "ms-python.black-formatter",
     "editor.codeActionsOnSave": {
-    "source.organizeImports": "explicit"
-        },
+      "source.organizeImports": "explicit"
+    }
   }
 }

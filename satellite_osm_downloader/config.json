@@ -1,0 +1,10 @@
+{
+  "type": "app",
+  "version": "2.0.0",
+  "name": "Satellite And OSM Downloader",
+  "description": "Download satellite imagery with optional OSM annotations into Supervisely datasets.",
+  "categories": ["import", "images", "synthetic", "data operations"],
+  "entrypoint": "python -m uvicorn src.main:app --host 0.0.0.0 --port 8000",
+  "port": 8000,
+  "task_location": "workspace_tasks"
+}
