@@ -6,7 +6,7 @@
   "categories": ["export", "images", "data operations"],
   "need_gpu": false,
   "community_agent": true,
-  "docker_image": "supervisely/slyosm:latest",
+  "docker_image": "supervisely/slyosm:0.0.1",
   "instance_version": "6.15.35",
   "headless": true,
   "entrypoint": "python src/main.py",
