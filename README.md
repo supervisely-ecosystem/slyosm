@@ -1,7 +1,7 @@
 # maps4fssly
 
 End-to-end script to:
-1. Download satellite imagery with `pygmdl` (zoom 18).
+1. Download satellite imagery with `pydtmdl` (provider-based, no zoom parameter).
 2. Fetch OSM features with `osmnx`.
 3. Convert them to instance masks.
 4. Upload image + annotation + geospatial metadata to Supervisely.

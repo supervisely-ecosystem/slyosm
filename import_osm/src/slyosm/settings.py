@@ -16,7 +16,7 @@ OSM_EXPORT_DIR = DATA_DIR / "osm"
 ARCHIVE_DIR = DATA_DIR / "archives"
 OSM_CLASSES_PATH = Path(__file__).resolve().with_name("osm_classes.json")
 
-DEFAULT_PROJECT_NAME = os.getenv("SLY_PROJECT_NAME", "satellite_osm_downloads")
+DEFAULT_PROJECT_NAME = os.getenv("SLY_PROJECT_NAME", "import_osm_downloads")
 DEFAULT_DATASET_NAME = os.getenv("SLY_DATASET_NAME", "downloaded")
 ANNOTATION_BATCH_SIZE = int(os.getenv("SLY_ANN_BATCH_SIZE", "200"))
 

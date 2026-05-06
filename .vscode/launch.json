@@ -2,61 +2,19 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Legacy Main",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/src/main.py",
-            "cwd": "${workspaceFolder}",
-            "envFile": "${workspaceFolder}/local.env",
-            "console": "integratedTerminal",
-            "justMyCode": true,
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}",
-                "LOG_LEVEL": "DEBUG"
-            }
-        },
-        {
-            "name": "Legacy Random Downloader",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/src/osm_to_sly.py",
-            "cwd": "${workspaceFolder}",
-            "envFile": "${workspaceFolder}/local.env",
-            "console": "integratedTerminal",
-            "justMyCode": true,
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}",
-                "LOG_LEVEL": "DEBUG"
-            }
-        },
-        {
-            "name": "Legacy Export Single Image",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/src/sly_to_osm.py",
-            "cwd": "${workspaceFolder}",
-            "envFile": "${workspaceFolder}/local.env",
-            "console": "integratedTerminal",
-            "justMyCode": true,
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}",
-                "LOG_LEVEL": "DEBUG"
-            }
-        },
-        {
-            "name": "App: Satellite And OSM Downloader",
+            "name": "App: Import OSM",
             "type": "python",
             "request": "launch",
             "module": "uvicorn",
             "args": [
-                "satellite_osm_downloader.src.main:app",
+                "import_osm.src.main:app",
                 "--host",
                 "0.0.0.0",
                 "--port",
                 "8000"
             ],
             "cwd": "${workspaceFolder}",
-            "envFile": "${workspaceFolder}/satellite_osm_downloader/local.env",
+            "envFile": "${workspaceFolder}/import_osm/local.env",
             "console": "integratedTerminal",
             "justMyCode": true,
             "env": {

@@ -13,13 +13,13 @@ import numpy as np
 import supervisely as sly
 from pyproj import CRS, Transformer
 
-from satellite_osm_downloader.src.slyosm.osm_config import (
+from import_osm.src.slyosm.osm_config import (
     OSMClassSpec,
     load_osm_class_specs,
     load_osm_class_specs_from_payload,
     resolve_default_osm_tag,
 )
-from satellite_osm_downloader.src.slyosm.settings import (
+from import_osm.src.slyosm.settings import (
     ARCHIVE_DIR,
     OSM_CLASSES_PATH,
     OSM_EXPORT_DIR,

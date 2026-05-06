@@ -11,14 +11,14 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from satellite_osm_downloader.src.slyosm.geometry import scene_from_dict
-from satellite_osm_downloader.src.slyosm.osm_config import load_osm_class_specs
-from satellite_osm_downloader.src.slyosm.scene_downloader import (
+from import_osm.src.slyosm.geometry import scene_from_dict
+from import_osm.src.slyosm.osm_config import load_osm_class_specs
+from import_osm.src.slyosm.scene_downloader import (
     ensure_project_and_dataset,
     process_scenes,
     save_dataset_custom_data,
 )
-from satellite_osm_downloader.src.slyosm.settings import (
+from import_osm.src.slyosm.settings import (
     DEFAULT_DATASET_NAME,
     DEFAULT_PROJECT_NAME,
     OSM_CLASSES_PATH,
@@ -34,7 +34,7 @@ SCENES: List[Dict[str, Any]] = [
         "center_lon": 10.788837124189856,
         "size_m": 1024,
         "rotation_deg": 0,
-        "zoom": 18,
+        "imagery_provider": "sentinel2_l2a",
     }
 ]
 

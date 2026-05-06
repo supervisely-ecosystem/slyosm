@@ -5,7 +5,6 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import supervisely as sly
-from pygmdl.downloader import calc, top_left_from_center
 from pyproj import CRS, Geod, Transformer
 from shapely.geometry import GeometryCollection, MultiPolygon, Polygon, box
 
@@ -27,8 +26,8 @@ class SceneRequest:
     :type size_m: int
     :param rotation_deg: Tile rotation in degrees.
     :type rotation_deg: float
-    :param zoom: Satellite tile zoom.
-    :type zoom: int
+    :param imagery_provider: Optional imagery provider code used by pydtmdl.
+    :type imagery_provider: Optional[str]
     :param grid_row: Optional grid row index.
     :type grid_row: Optional[int]
     :param grid_col: Optional grid column index.
@@ -42,7 +41,7 @@ class SceneRequest:
     center_lon: float
     size_m: int
     rotation_deg: float
-    zoom: int
+    imagery_provider: Optional[str] = None
     grid_row: Optional[int] = None
     grid_col: Optional[int] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -108,6 +107,43 @@ def project_local_xy_to_pixels(points_xy: np.ndarray, homography: np.ndarray) ->
     return projected[:, :2] / denominator
 
 
+def _scene_corners_from_center(
+    center_lat: float,
+    center_lon: float,
+    size_m: int,
+    rotation_deg: float,
+) -> List[Tuple[float, float]]:
+    """Compute scene corner coordinates in lon-lat order from center and rotation."""
+
+    half_size = float(size_m) / 2.0
+    top_center_lat, top_center_lon = move_point(
+        center_lat, center_lon, rotation_deg, half_size
+    )
+    bottom_center_lat, bottom_center_lon = move_point(
+        center_lat, center_lon, 180.0 + rotation_deg, half_size
+    )
+
+    top_left_lat, top_left_lon = move_point(
+        top_center_lat, top_center_lon, 270.0 + rotation_deg, half_size
+    )
+    top_right_lat, top_right_lon = move_point(
+        top_center_lat, top_center_lon, 90.0 + rotation_deg, half_size
+    )
+    bottom_right_lat, bottom_right_lon = move_point(
+        bottom_center_lat, bottom_center_lon, 90.0 + rotation_deg, half_size
+    )
+    bottom_left_lat, bottom_left_lon = move_point(
+        bottom_center_lat, bottom_center_lon, 270.0 + rotation_deg, half_size
+    )
+
+    return [
+        (top_left_lon, top_left_lat),
+        (top_right_lon, top_right_lat),
+        (bottom_right_lon, bottom_right_lat),
+        (bottom_left_lon, bottom_left_lat),
+    ]
+
+
 def build_scene_geo_context(
     center_lat: float,
     center_lon: float,
@@ -134,19 +170,13 @@ def build_scene_geo_context(
     :rtype: SceneGeoContext
     """
 
-    top_left_lat, top_left_lon = top_left_from_center(
-        center_lat,
-        center_lon,
-        int(size_m),
-        int(round(rotation_deg)),
+    corners_lon_lat = _scene_corners_from_center(
+        center_lat=center_lat,
+        center_lon=center_lon,
+        size_m=int(size_m),
+        rotation_deg=float(rotation_deg),
     )
-    lats, lons = calc(top_left_lat, top_left_lon, int(round(rotation_deg)), int(size_m))
-    corners_lon_lat = [
-        (float(lons[0]), float(lats[0])),
-        (float(lons[1]), float(lats[1])),
-        (float(lons[2]), float(lats[2])),
-        (float(lons[3]), float(lats[3])),
-    ]
+    top_left_lon, top_left_lat = corners_lon_lat[0]
 
     crs_local = CRS.from_proj4(
         "+proj=aeqd +lat_0={lat} +lon_0={lon} +datum=WGS84 +units=m +no_defs".format(
@@ -172,12 +202,9 @@ def build_scene_geo_context(
     )
     local_to_pixel_h = compute_homography(local_corners, destination_pixels)
 
-    bbox = (
-        float(min(lons)),
-        float(min(lats)),
-        float(max(lons)),
-        float(max(lats)),
-    )
+    lons = [corner[0] for corner in corners_lon_lat]
+    lats = [corner[1] for corner in corners_lon_lat]
+    bbox = (float(min(lons)), float(min(lats)), float(max(lons)), float(max(lats)))
 
     return SceneGeoContext(
         top_left_lat=float(top_left_lat),
@@ -286,8 +313,8 @@ def ring_to_supervisely_points(ring_uv: np.ndarray, width: int, height: int) -> 
 
     points_rc = []
     for col_value, row_value in ring_uv:
-        col_index = int(round(float(np.clip(col_value, -0.5, width - 0.5))))
-        row_index = int(round(float(np.clip(row_value, -0.5, height - 0.5))))
+        col_index = int(round(float(np.clip(col_value, 0.0, float(width - 1)))))
+        row_index = int(round(float(np.clip(row_value, 0.0, float(height - 1)))))
         point = (row_index, col_index)
         if not points_rc or points_rc[-1] != point:
             points_rc.append(point)
@@ -394,6 +421,50 @@ def polygon_to_bitmap(
     return sly.Bitmap(binary_mask)
 
 
+def polygon_to_supervisely_polygons(
+    polygon: Polygon,
+    homography: np.ndarray,
+    width: int,
+    height: int,
+) -> List[sly.Polygon]:
+    """Project and clip a polygon to image bounds and return Supervisely polygon geometries."""
+
+    pixel_geometry = project_polygon_to_pixel_geometry(polygon, homography)
+    if pixel_geometry is None:
+        return []
+
+    clip_rect = box(0.0, 0.0, float(width - 1), float(height - 1))
+    clipped_geometry = pixel_geometry.intersection(clip_rect)
+    if clipped_geometry.is_empty:
+        return []
+
+    clipped_polygons = [
+        polygon_item
+        for polygon_item in iter_polygons(clipped_geometry)
+        if polygon_item.area > 0
+    ]
+    if not clipped_polygons:
+        return []
+
+    result = []
+    for clipped_polygon in clipped_polygons:
+        exterior_uv = np.asarray(clipped_polygon.exterior.coords[:-1], dtype=np.float64)
+        exterior_rc = ring_to_supervisely_points(exterior_uv, width, height)
+        if len(exterior_rc) < 3:
+            continue
+
+        interior_rc_list = []
+        for interior in clipped_polygon.interiors:
+            interior_uv = np.asarray(interior.coords[:-1], dtype=np.float64)
+            interior_rc = ring_to_supervisely_points(interior_uv, width, height)
+            if len(interior_rc) >= 3:
+                interior_rc_list.append(interior_rc)
+
+        result.append(sly.Polygon(exterior=exterior_rc, interior=interior_rc_list))
+
+    return result
+
+
 def move_point(lat: float, lon: float, bearing_deg: float, distance_m: float) -> Tuple[float, float]:
     """Move a WGS84 coordinate by distance and bearing.
 
@@ -437,7 +508,7 @@ def build_coordinate_scenes(
     coordinates: Sequence[Tuple[float, float]],
     size_m: int,
     rotation_deg: float,
-    zoom: int,
+    imagery_provider: Optional[str] = None,
     prefix: str = "scene",
 ) -> List[SceneRequest]:
     """Build scene requests for explicit center coordinates.
@@ -448,8 +519,8 @@ def build_coordinate_scenes(
     :type size_m: int
     :param rotation_deg: Rotation in degrees.
     :type rotation_deg: float
-    :param zoom: Satellite zoom level.
-    :type zoom: int
+    :param imagery_provider: Optional imagery provider code used by pydtmdl.
+    :type imagery_provider: Optional[str]
     :param prefix: Scene identifier prefix.
     :type prefix: str
     :return: Scene requests.
@@ -465,7 +536,7 @@ def build_coordinate_scenes(
                 center_lon=float(lon_value),
                 size_m=int(size_m),
                 rotation_deg=float(rotation_deg),
-                zoom=int(zoom),
+                imagery_provider=imagery_provider,
             )
         )
     return scenes
@@ -479,7 +550,7 @@ def build_grid_scenes(
     cols: int,
     size_m: int,
     rotation_deg: float,
-    zoom: int,
+    imagery_provider: Optional[str] = None,
 ) -> List[SceneRequest]:
     """Build contiguous scene requests for a rotated grid.
 
@@ -497,8 +568,8 @@ def build_grid_scenes(
     :type size_m: int
     :param rotation_deg: Rotation in degrees.
     :type rotation_deg: float
-    :param zoom: Satellite zoom level.
-    :type zoom: int
+    :param imagery_provider: Optional imagery provider code used by pydtmdl.
+    :type imagery_provider: Optional[str]
     :return: Scene requests.
     :rtype: List[SceneRequest]
     """
@@ -535,7 +606,7 @@ def build_grid_scenes(
                     center_lon=center_lon,
                     size_m=int(size_m),
                     rotation_deg=float(rotation_deg),
-                    zoom=int(zoom),
+                    imagery_provider=imagery_provider,
                     grid_row=row_index,
                     grid_col=col_index,
                     metadata={
@@ -571,7 +642,11 @@ def scene_from_dict(raw_scene: Dict[str, Any]) -> SceneRequest:
         center_lon=float(raw_scene["center_lon"]),
         size_m=int(raw_scene["size_m"]),
         rotation_deg=float(raw_scene["rotation_deg"]),
-        zoom=int(raw_scene["zoom"]),
+        imagery_provider=(
+            str(raw_scene.get("imagery_provider")).strip() or None
+            if raw_scene.get("imagery_provider") is not None
+            else None
+        ),
         grid_row=_optional_int(raw_scene.get("grid_row")),
         grid_col=_optional_int(raw_scene.get("grid_col")),
         metadata=metadata,
@@ -600,13 +675,12 @@ def scene_metadata_payload(
 
     pixel_to_local_h = np.linalg.inv(scene_geo.local_to_pixel_h)
     metadata = {
-        "source": "pygmdl",
+        "source": "pydtmdl",
         "scene_id": scene.identifier,
         "center": {"lat": float(scene.center_lat), "lon": float(scene.center_lon)},
         "top_left": {"lat": scene_geo.top_left_lat, "lon": scene_geo.top_left_lon},
         "size_m": int(scene.size_m),
         "rotation_deg": float(scene.rotation_deg),
-        "zoom": int(scene.zoom),
         "image_size_px": {"width": int(image_width), "height": int(image_height)},
         "bbox_left_bottom_right_top": list(scene_geo.bbox_left_bottom_right_top),
         "corners_lon_lat": [list(point) for point in scene_geo.corners_lon_lat],
@@ -615,6 +689,8 @@ def scene_metadata_payload(
         "local_to_pixel_h": scene_geo.local_to_pixel_h.tolist(),
         "pixel_to_local_h": pixel_to_local_h.tolist(),
     }
+    if scene.imagery_provider:
+        metadata["imagery_provider"] = scene.imagery_provider
     if scene.grid_row is not None and scene.grid_col is not None:
         metadata["grid"] = {"row": int(scene.grid_row), "col": int(scene.grid_col)}
     if scene.metadata:

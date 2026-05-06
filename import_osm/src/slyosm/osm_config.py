@@ -190,6 +190,7 @@ def class_specs_to_metadata_payload(class_specs: List[OSMClassSpec]) -> List[Dic
 def ensure_project_meta_has_classes(
     project_meta: sly.ProjectMeta,
     class_specs: List[OSMClassSpec],
+    polygon_target_geometry: str = "polygon",
 ) -> sly.ProjectMeta:
     """Add missing bitmap object classes to project metadata.
 
@@ -201,12 +202,33 @@ def ensure_project_meta_has_classes(
     :rtype: sly.ProjectMeta
     """
 
+    if polygon_target_geometry not in {"polygon", "mask"}:
+        raise ValueError(
+            "Unsupported polygon target geometry: {value}".format(
+                value=polygon_target_geometry
+            )
+        )
+
     updated_meta = project_meta
     for class_spec in class_specs:
-        if updated_meta.get_obj_class(class_spec.name) is not None:
+        desired_geometry_type = (
+            sly.Polygon if polygon_target_geometry == "polygon" else sly.Bitmap
+        )
+
+        existing_class = updated_meta.get_obj_class(class_spec.name)
+        if existing_class is not None:
+            if existing_class.geometry_type != desired_geometry_type:
+                raise RuntimeError(
+                    "Existing class '{name}' has geometry '{existing}', expected '{expected}'. "
+                    "Use another project/dataset or align the target geometry mode.".format(
+                        name=class_spec.name,
+                        existing=existing_class.geometry_type.geometry_name(),
+                        expected=desired_geometry_type.geometry_name(),
+                    )
+                )
             continue
         updated_meta = updated_meta.add_obj_class(
-            sly.ObjClass(class_spec.name, sly.Bitmap, color=class_spec.color)
+            sly.ObjClass(class_spec.name, desired_geometry_type, color=class_spec.color)
         )
     return updated_meta
 

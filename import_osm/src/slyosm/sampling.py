@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, Sequence, Set, Tuple
+from typing import List, Optional, Sequence, Set, Tuple
 
 import numpy as np
 import osmnx as ox
@@ -57,6 +57,35 @@ def coordinate_key(lat: float, lon: float) -> str:
     )
 
 
+def _collect_sampling_polygons(area_polygon) -> List:
+    """Extract non-empty polygon parts suitable for random sampling.
+
+    :param area_polygon: Polygonal geometry returned by the geocoder.
+    :type area_polygon: Any
+    :return: Flat list of polygon parts.
+    :rtype: List
+    """
+
+    if area_polygon.is_empty:
+        return []
+
+    if area_polygon.geom_type == "Polygon":
+        return [area_polygon]
+
+    polygons = []
+    for geometry in getattr(area_polygon, "geoms", []):
+        if geometry.is_empty:
+            continue
+
+        if geometry.geom_type == "Polygon":
+            polygons.append(geometry)
+            continue
+
+        polygons.extend(_collect_sampling_polygons(geometry))
+
+    return polygons
+
+
 def generate_random_coordinates(
     area_polygon,
     count: int,
@@ -81,8 +110,18 @@ def generate_random_coordinates(
     if count <= 0:
         return []
 
-    prepared = prep(area_polygon)
-    min_lon, min_lat, max_lon, max_lat = area_polygon.bounds
+    polygons = _collect_sampling_polygons(area_polygon)
+    if len(polygons) == 0:
+        raise RuntimeError("Area polygon contains no polygon parts to sample from.")
+
+    polygon_areas = np.asarray([max(float(polygon.area), 0.0) for polygon in polygons])
+    if float(polygon_areas.sum()) <= 0.0:
+        polygon_weights = np.full(len(polygons), 1.0 / len(polygons))
+    else:
+        polygon_weights = polygon_areas / polygon_areas.sum()
+
+    prepared_polygons = [prep(polygon) for polygon in polygons]
+    polygon_bounds = [polygon.bounds for polygon in polygons]
     known_keys = set(used_keys or set())
     planned_keys = set()
     coordinates = []
@@ -92,9 +131,11 @@ def generate_random_coordinates(
     while len(coordinates) < count and attempts < max_attempts:
         attempts += 1
 
+        polygon_index = int(rng.choice(len(polygons), p=polygon_weights))
+        min_lon, min_lat, max_lon, max_lat = polygon_bounds[polygon_index]
         lon = float(rng.uniform(min_lon, max_lon))
         lat = float(rng.uniform(min_lat, max_lat))
-        if not prepared.contains(Point(lon, lat)):
+        if not prepared_polygons[polygon_index].contains(Point(lon, lat)):
             continue
 
         key = coordinate_key(lat, lon)

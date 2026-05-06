@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -10,23 +10,24 @@ import osmnx as ox
 import requests
 import supervisely as sly
 from PIL import Image
-from pygmdl import save_image
+from pydtmdl import DTMProvider, ImageryProvider
 from shapely.ops import transform as shapely_transform
 
-from satellite_osm_downloader.src.slyosm.geometry import (
+from import_osm.src.slyosm.geometry import (
     SceneGeoContext,
     SceneRequest,
     build_scene_geo_context,
     geometry_to_polygons,
     polygon_to_bitmap,
+    polygon_to_supervisely_polygons,
     scene_metadata_payload,
 )
-from satellite_osm_downloader.src.slyosm.osm_config import (
+from import_osm.src.slyosm.osm_config import (
     OSMClassSpec,
     class_specs_to_metadata_payload,
     ensure_project_meta_has_classes,
 )
-from satellite_osm_downloader.src.slyosm.settings import (
+from import_osm.src.slyosm.settings import (
     ANNOTATION_BATCH_SIZE,
     IMAGES_DIR,
     META_DIR,
@@ -43,6 +44,30 @@ CLASS_MASK_PRIORITY = {
     "field": 20,
     "forest": 10,
 }
+
+INTERFACE_MODE_MULTIVIEW = "multiview"
+INTERFACE_MODE_OVERLAY = "overlay"
+INTERFACE_MODE_ONLY_SATELLITE = "only_satellite"
+INTERFACE_MODE_ONLY_DTM = "only_dtm"
+
+SUPPORTED_INTERFACE_MODES = {
+    INTERFACE_MODE_MULTIVIEW,
+    INTERFACE_MODE_OVERLAY,
+    INTERFACE_MODE_ONLY_SATELLITE,
+    INTERFACE_MODE_ONLY_DTM,
+}
+
+DEFAULT_OUTPUT_RESOLUTION_PX = 1024
+TARGET_GEOMETRY_POLYGON = "polygon"
+TARGET_GEOMETRY_MASK = "mask"
+SUPPORTED_TARGET_GEOMETRIES = {TARGET_GEOMETRY_POLYGON, TARGET_GEOMETRY_MASK}
+
+if hasattr(Image, "Resampling"):
+    _RESAMPLE_LANCZOS = Image.Resampling.LANCZOS
+    _RESAMPLE_BICUBIC = Image.Resampling.BICUBIC
+else:
+    _RESAMPLE_LANCZOS = Image.LANCZOS
+    _RESAMPLE_BICUBIC = Image.BICUBIC
 
 
 @dataclass(frozen=True)
@@ -64,6 +89,18 @@ class SceneDownloadFailure:
     error: str
 
 
+@dataclass(frozen=True)
+class ResizedImageResult:
+    """Result of aspect-preserving resize to square output."""
+
+    image_rgb: np.ndarray
+    source_width: int
+    source_height: int
+    output_width: int
+    output_height: int
+    source_to_output_h: np.ndarray
+
+
 def ensure_project_and_dataset(
     api: sly.Api,
     workspace_id: int,
@@ -72,6 +109,7 @@ def ensure_project_and_dataset(
     project_name: Optional[str] = None,
     dataset_id: Optional[int] = None,
     dataset_name: Optional[str] = None,
+    polygon_target_geometry: str = TARGET_GEOMETRY_POLYGON,
 ) -> Tuple[Any, Any, sly.ProjectMeta]:
     """Resolve or create the destination project and dataset.
 
@@ -128,7 +166,7 @@ def ensure_project_and_dataset(
                 )
         else:
             resolved_project_name = project_name or build_generated_name(
-                "satellite_osm"
+                "import_osm"
             )
             project_info = api.project.create(
                 workspace_id,
@@ -144,7 +182,11 @@ def ensure_project_and_dataset(
         )
 
     project_meta = sly.ProjectMeta.from_json(api.project.get_meta(project_info.id))
-    updated_meta = ensure_project_meta_has_classes(project_meta, class_specs)
+    updated_meta = ensure_project_meta_has_classes(
+        project_meta,
+        class_specs,
+        polygon_target_geometry=polygon_target_geometry,
+    )
     if updated_meta != project_meta:
         project_meta = api.project.update_meta(project_info.id, updated_meta)
     return project_info, dataset_info, project_meta
@@ -251,6 +293,7 @@ def fetch_class_labels(
     scene_geo: SceneGeoContext,
     image_width: int,
     image_height: int,
+    polygon_target_geometry: str = TARGET_GEOMETRY_POLYGON,
 ) -> Tuple[List[sly.Label], int]:
     """Fetch matching OSM features for one class and convert them to labels.
 
@@ -342,15 +385,25 @@ def fetch_class_labels(
         )
 
         for polygon in polygons:
-            bitmap = polygon_to_bitmap(
-                polygon=polygon,
-                homography=scene_geo.local_to_pixel_h,
-                width=image_width,
-                height=image_height,
-            )
-            if bitmap is None:
-                continue
-            labels.append(sly.Label(bitmap, obj_class))
+            if polygon_target_geometry == TARGET_GEOMETRY_POLYGON:
+                sly_polygons = polygon_to_supervisely_polygons(
+                    polygon=polygon,
+                    homography=scene_geo.local_to_pixel_h,
+                    width=image_width,
+                    height=image_height,
+                )
+                for sly_polygon in sly_polygons:
+                    labels.append(sly.Label(sly_polygon, obj_class))
+            else:
+                bitmap = polygon_to_bitmap(
+                    polygon=polygon,
+                    homography=scene_geo.local_to_pixel_h,
+                    width=image_width,
+                    height=image_height,
+                )
+                if bitmap is None:
+                    continue
+                labels.append(sly.Label(bitmap, obj_class))
 
     return labels, raw_features
 
@@ -503,12 +556,162 @@ def upload_annotation_resilient(
             batch_size = new_batch_size
 
 
+def _normalize_to_uint8(data: np.ndarray) -> np.ndarray:
+    """Convert numeric imagery arrays to uint8 for PNG export."""
+
+    if data.dtype == np.uint8:
+        return data
+
+    data_float = data.astype(np.float32)
+    min_value = float(np.min(data_float))
+    max_value = float(np.max(data_float))
+    if max_value <= min_value:
+        return np.zeros_like(data_float, dtype=np.uint8)
+
+    scaled = (data_float - min_value) * (255.0 / (max_value - min_value))
+    return np.clip(scaled, 0, 255).astype(np.uint8)
+
+
+def _to_hwc_array(data: Any) -> np.ndarray:
+    """Convert pydtmdl output to an HxWxC array."""
+
+    if np.ma.isMaskedArray(data):
+        array = np.asarray(data.filled(0))
+    else:
+        array = np.asarray(data)
+
+    if array.ndim == 2:
+        array = array[:, :, None]
+    elif array.ndim == 3:
+        if array.shape[0] in {1, 3, 4} and array.shape[2] not in {1, 3, 4}:
+            array = np.transpose(array, (1, 2, 0))
+    else:
+        raise RuntimeError(
+            "Unexpected imagery data shape from pydtmdl: {shape}".format(
+                shape=array.shape
+            )
+        )
+
+    return array
+
+
+def _visualize_array_rgb(data: Any) -> np.ndarray:
+    """Convert numeric arrays to RGB uint8 visualization."""
+
+    array = _to_hwc_array(data)
+    channels = int(array.shape[2])
+    if channels == 1:
+        normalized = _normalize_to_uint8(array[:, :, 0])
+        return np.repeat(normalized[:, :, None], 3, axis=2)
+
+    if channels >= 3:
+        rgb = array[:, :, :3]
+        return _normalize_to_uint8(rgb)
+
+    raise RuntimeError("Unsupported number of channels: {channels}".format(channels=channels))
+
+
+def _resize_to_square_with_aspect(
+    image_rgb: np.ndarray, output_size_px: int
+) -> ResizedImageResult:
+    """Resize image with aspect-ratio preservation and center-crop to a square canvas."""
+
+    if image_rgb.ndim != 3 or image_rgb.shape[2] != 3:
+        raise RuntimeError("Expected RGB image array for resize.")
+
+    target_size = int(output_size_px)
+    if target_size <= 0:
+        raise ValueError("Output resolution must be positive.")
+
+    image = Image.fromarray(image_rgb, mode="RGB")
+    source_width, source_height = image.size
+    scale = max(target_size / float(source_width), target_size / float(source_height))
+    resized_width = max(1, int(round(source_width * scale)))
+    resized_height = max(1, int(round(source_height * scale)))
+
+    if scale < 1.0:
+        resample = _RESAMPLE_LANCZOS
+    else:
+        resample = _RESAMPLE_BICUBIC
+    resized = image.resize((resized_width, resized_height), resample=resample)
+
+    left = max(0, (resized_width - target_size) // 2)
+    top = max(0, (resized_height - target_size) // 2)
+    right = left + target_size
+    bottom = top + target_size
+    cropped = resized.crop((left, top, right, bottom))
+    source_to_output_h = np.asarray(
+        [
+            [float(scale), 0.0, float(-left)],
+            [0.0, float(scale), float(-top)],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=np.float64,
+    )
+
+    return ResizedImageResult(
+        image_rgb=np.asarray(cropped),
+        source_width=int(source_width),
+        source_height=int(source_height),
+        output_width=int(target_size),
+        output_height=int(target_size),
+        source_to_output_h=source_to_output_h,
+    )
+
+
+def _download_satellite_layer(
+    scene: SceneRequest,
+    target_images_dir: Path,
+) -> Tuple[np.ndarray, Dict[str, Any], str]:
+    """Download satellite imagery for scene and return processed RGB layer with metadata."""
+
+    provider_code = scene.imagery_provider or None
+    result = ImageryProvider.extract_area(
+        center=(float(scene.center_lat), float(scene.center_lon)),
+        width_m=int(scene.size_m),
+        height_m=int(scene.size_m),
+        rotation_deg=float(scene.rotation_deg),
+        provider_code=provider_code,
+        directory=str(target_images_dir),
+    )
+    return _visualize_array_rgb(result.data), result.metadata.model_dump(), provider_code or "auto"
+
+
+def _download_dtm_layer(
+    scene: SceneRequest,
+    target_images_dir: Path,
+) -> Tuple[np.ndarray, Dict[str, Any], str]:
+    """Download DTM data for scene and return processed RGB layer with metadata."""
+
+    dtm_provider_code = None
+    try:
+        best_provider = DTMProvider.get_best((float(scene.center_lat), float(scene.center_lon)))
+        if best_provider is not None:
+            dtm_provider_code = best_provider.code()
+    except Exception:
+        dtm_provider_code = None
+
+    result = DTMProvider.extract_area(
+        center=(float(scene.center_lat), float(scene.center_lon)),
+        width_m=int(scene.size_m),
+        height_m=int(scene.size_m),
+        rotation_deg=float(scene.rotation_deg),
+        provider_code=dtm_provider_code,
+        fallback_provider_code="srtm30",
+        directory=str(target_images_dir),
+    )
+    return _visualize_array_rgb(result.data), result.metadata.model_dump(), (dtm_provider_code or "auto")
+
+
 def process_scene(
     api: sly.Api,
     dataset_id: int,
     project_meta: sly.ProjectMeta,
     class_specs: List[OSMClassSpec],
     scene: SceneRequest,
+    interface_mode: str = INTERFACE_MODE_MULTIVIEW,
+    output_resolution_px: int = DEFAULT_OUTPUT_RESOLUTION_PX,
+    polygon_target_geometry: str = TARGET_GEOMETRY_POLYGON,
     download_osm: bool = True,
     images_dir: Optional[Path] = None,
     meta_dir: Optional[Path] = None,
@@ -541,31 +744,152 @@ def process_scene(
     target_images_dir.mkdir(parents=True, exist_ok=True)
     target_meta_dir.mkdir(parents=True, exist_ok=True)
 
-    image_path = target_images_dir / "{scene_id}.png".format(scene_id=scene.identifier)
-    sly.logger.info("[%s] Downloading image with pygmdl...", scene.identifier)
-    save_image(
-        lat=float(scene.center_lat),
-        lon=float(scene.center_lon),
-        size=int(scene.size_m),
-        output_path=str(image_path),
-        rotation=int(round(scene.rotation_deg)),
-        zoom=int(scene.zoom),
-        from_center=True,
-        show_progress=True,
+    if polygon_target_geometry not in SUPPORTED_TARGET_GEOMETRIES:
+        raise ValueError(
+            "Unsupported polygon target geometry: {value}. Expected one of {supported}.".format(
+                value=polygon_target_geometry,
+                supported=sorted(SUPPORTED_TARGET_GEOMETRIES),
+            )
+        )
+
+    if interface_mode not in SUPPORTED_INTERFACE_MODES:
+        raise ValueError(
+            "Unsupported interface mode: {mode}. Expected one of {supported}.".format(
+                mode=interface_mode,
+                supported=sorted(SUPPORTED_INTERFACE_MODES),
+            )
+        )
+
+    should_download_satellite = interface_mode in {
+        INTERFACE_MODE_MULTIVIEW,
+        INTERFACE_MODE_OVERLAY,
+        INTERFACE_MODE_ONLY_SATELLITE,
+    }
+    should_download_dtm = interface_mode in {
+        INTERFACE_MODE_MULTIVIEW,
+        INTERFACE_MODE_OVERLAY,
+        INTERFACE_MODE_ONLY_DTM,
+    }
+
+    satellite_path = target_images_dir / "{scene_id}__satellite.png".format(
+        scene_id=scene.identifier
     )
+    dtm_path = target_images_dir / "{scene_id}__dtm.png".format(scene_id=scene.identifier)
+    primary_path = target_images_dir / "{scene_id}.png".format(scene_id=scene.identifier)
 
-    with Image.open(image_path) as image:
-        image_width, image_height = image.size
+    satellite_array = None
+    dtm_array = None
+    satellite_meta = None
+    dtm_meta = None
+    satellite_provider_requested = None
+    dtm_provider_requested = None
+    satellite_source_width = None
+    satellite_source_height = None
+    dtm_source_width = None
+    dtm_source_height = None
+    satellite_source_to_output_h = None
+    dtm_source_to_output_h = None
 
-    scene_geo = build_scene_geo_context(
+    if should_download_satellite:
+        sly.logger.info(
+            "[%s] Downloading satellite imagery with pydtmdl provider=%s...",
+            scene.identifier,
+            scene.imagery_provider or "auto",
+        )
+        satellite_array, satellite_meta, satellite_provider_requested = _download_satellite_layer(
+            scene, target_images_dir
+        )
+        satellite_resize = _resize_to_square_with_aspect(satellite_array, output_resolution_px)
+        satellite_array = satellite_resize.image_rgb
+        satellite_source_width = satellite_resize.source_width
+        satellite_source_height = satellite_resize.source_height
+        satellite_source_to_output_h = satellite_resize.source_to_output_h
+        Image.fromarray(satellite_array, mode="RGB").save(satellite_path)
+
+    if should_download_dtm:
+        sly.logger.info("[%s] Downloading DTM data with pydtmdl...", scene.identifier)
+        dtm_array, dtm_meta, dtm_provider_requested = _download_dtm_layer(
+            scene, target_images_dir
+        )
+        dtm_resize = _resize_to_square_with_aspect(dtm_array, output_resolution_px)
+        dtm_array = dtm_resize.image_rgb
+        dtm_source_width = dtm_resize.source_width
+        dtm_source_height = dtm_resize.source_height
+        dtm_source_to_output_h = dtm_resize.source_to_output_h
+        Image.fromarray(dtm_array, mode="RGB").save(dtm_path)
+
+    if interface_mode in {INTERFACE_MODE_MULTIVIEW, INTERFACE_MODE_OVERLAY}:
+        if satellite_array is None or dtm_array is None:
+            raise RuntimeError(
+                "Both satellite and DTM layers are required for mode '{mode}'.".format(
+                    mode=interface_mode
+                )
+            )
+
+    if interface_mode == INTERFACE_MODE_ONLY_DTM:
+        if dtm_array is None:
+            raise RuntimeError("DTM layer was not downloaded.")
+        if dtm_source_width is None or dtm_source_height is None or dtm_source_to_output_h is None:
+            raise RuntimeError("DTM source transform is missing.")
+        Image.fromarray(dtm_array, mode="RGB").save(primary_path)
+        image_width = int(dtm_array.shape[1])
+        image_height = int(dtm_array.shape[0])
+        source_width = int(dtm_source_width)
+        source_height = int(dtm_source_height)
+        source_to_output_h = dtm_source_to_output_h
+    else:
+        if satellite_array is None:
+            raise RuntimeError("Satellite layer was not downloaded.")
+        if (
+            satellite_source_width is None
+            or satellite_source_height is None
+            or satellite_source_to_output_h is None
+        ):
+            raise RuntimeError("Satellite source transform is missing.")
+        Image.fromarray(satellite_array, mode="RGB").save(primary_path)
+        image_width = int(satellite_array.shape[1])
+        image_height = int(satellite_array.shape[0])
+        source_width = int(satellite_source_width)
+        source_height = int(satellite_source_height)
+        source_to_output_h = satellite_source_to_output_h
+
+    scene_geo_base = build_scene_geo_context(
         center_lat=float(scene.center_lat),
         center_lon=float(scene.center_lon),
         size_m=int(scene.size_m),
         rotation_deg=float(scene.rotation_deg),
-        image_width=image_width,
-        image_height=image_height,
+        image_width=source_width,
+        image_height=source_height,
+    )
+    scene_geo = replace(
+        scene_geo_base,
+        local_to_pixel_h=np.asarray(source_to_output_h @ scene_geo_base.local_to_pixel_h, dtype=np.float64),
     )
     metadata = scene_metadata_payload(scene, scene_geo, image_width, image_height)
+    metadata["interface_mode"] = interface_mode
+    metadata["polygon_target_geometry"] = polygon_target_geometry
+    metadata["output_resolution_px"] = int(output_resolution_px)
+    metadata["render_transform"] = {
+        "source_size_px": {"width": int(source_width), "height": int(source_height)},
+        "output_size_px": {"width": int(image_width), "height": int(image_height)},
+        "source_to_output_h": np.asarray(source_to_output_h, dtype=np.float64).tolist(),
+        "policy": "cover_center_crop",
+    }
+    metadata["layers"] = {}
+    if satellite_meta is not None:
+        metadata["layers"]["satellite"] = {
+            "provider_requested": satellite_provider_requested,
+            "provider_used": satellite_meta.get("actual_provider"),
+            "pydtmdl": satellite_meta,
+            "image_name": satellite_path.name,
+        }
+    if dtm_meta is not None:
+        metadata["layers"]["dtm"] = {
+            "provider_requested": dtm_provider_requested,
+            "provider_used": dtm_meta.get("actual_provider"),
+            "pydtmdl": dtm_meta,
+            "image_name": dtm_path.name,
+        }
     metadata["osm_class_specs"] = class_specs_to_metadata_payload(class_specs)
     metadata["osm_download_enabled"] = bool(download_osm)
 
@@ -588,6 +912,7 @@ def process_scene(
                     scene_geo=scene_geo,
                     image_width=image_width,
                     image_height=image_height,
+                    polygon_target_geometry=polygon_target_geometry,
                 )
             except Exception as exc:
                 labels = []
@@ -668,13 +993,56 @@ def process_scene(
     metadata["class_stats"] = class_stats
     metadata["instance_count"] = len(all_labels)
 
-    image_info = api.image.upload_paths(
-        dataset_id,
-        [image_path.name],
-        [str(image_path)],
-        metas=[{"geo": metadata}],
-        conflict_resolution="replace",
-    )[0]
+    if interface_mode in {INTERFACE_MODE_ONLY_SATELLITE, INTERFACE_MODE_ONLY_DTM}:
+        image_info = api.image.upload_paths(
+            dataset_id,
+            [primary_path.name],
+            [str(primary_path)],
+            metas=[{"geo": metadata}],
+            conflict_resolution="replace",
+        )[0]
+    elif interface_mode == INTERFACE_MODE_OVERLAY:
+        dataset_info = api.dataset.get_info_by_id(dataset_id)
+        if dataset_info is not None:
+            api.project.set_overlay_settings(dataset_info.project_id)
+
+        parent_infos, _ = api.image.upload_overlay_images(
+            dataset_id=dataset_id,
+            names=[primary_path.name],
+            paths=[str(primary_path)],
+            overlay_names=[[dtm_path.name]],
+            overlay_paths=[[str(dtm_path)]],
+            conflict_resolution="replace",
+        )
+        image_info = parent_infos[0]
+        api.image.update_meta(image_info.id, {"geo": metadata})
+    else:
+        dataset_info = api.dataset.get_info_by_id(dataset_id)
+        if dataset_info is not None:
+            api.project.set_multiview_settings(dataset_info.project_id)
+
+        multiview_metas = [
+            {
+                "geo": {
+                    **metadata,
+                    "multiview_layer": "satellite",
+                }
+            },
+            {
+                "geo": {
+                    **metadata,
+                    "multiview_layer": "dtm",
+                }
+            },
+        ]
+        image_infos = api.image.upload_multiview_images(
+            dataset_id=dataset_id,
+            group_name=scene.identifier,
+            paths=[str(satellite_path), str(dtm_path)],
+            metas=multiview_metas,
+            conflict_resolution="replace",
+        )
+        image_info = image_infos[0]
 
     if all_labels:
         sly.logger.info(
@@ -718,6 +1086,9 @@ def process_scenes(
     project_meta: sly.ProjectMeta,
     class_specs: List[OSMClassSpec],
     scenes: List[SceneRequest],
+    interface_mode: str = INTERFACE_MODE_MULTIVIEW,
+    output_resolution_px: int = DEFAULT_OUTPUT_RESOLUTION_PX,
+    polygon_target_geometry: str = TARGET_GEOMETRY_POLYGON,
     download_osm: bool = True,
     should_stop: Optional[Callable[[], bool]] = None,
     progress_callback: Optional[Callable[[int, int, SceneRequest], None]] = None,
@@ -763,6 +1134,9 @@ def process_scenes(
                 project_meta=project_meta,
                 class_specs=class_specs,
                 scene=scene,
+                interface_mode=interface_mode,
+                output_resolution_px=output_resolution_px,
+                polygon_target_geometry=polygon_target_geometry,
                 download_osm=download_osm,
                 images_dir=images_dir,
                 meta_dir=meta_dir,

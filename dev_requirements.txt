@@ -1,6 +1,6 @@
 supervisely
 python-dotenv
-pygmdl
+pydtmdl
 osmnx
 shapely
 pyproj

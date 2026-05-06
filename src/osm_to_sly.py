@@ -14,22 +14,22 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from satellite_osm_downloader.src.slyosm.geometry import SceneRequest
-from satellite_osm_downloader.src.slyosm.osm_config import (
+from import_osm.src.slyosm.geometry import SceneRequest
+from import_osm.src.slyosm.osm_config import (
     OSMClassSpec,
     ensure_project_meta_has_classes,
     load_osm_class_specs,
 )
-from satellite_osm_downloader.src.slyosm.sampling import (
+from import_osm.src.slyosm.sampling import (
     build_area_polygon_wgs84,
     coordinate_key,
     generate_random_coordinates,
 )
-from satellite_osm_downloader.src.slyosm.scene_downloader import (
+from import_osm.src.slyosm.scene_downloader import (
     process_scene,
     save_dataset_custom_data,
 )
-from satellite_osm_downloader.src.slyosm.settings import (
+from import_osm.src.slyosm.settings import (
     OSM_CLASSES_PATH,
     SAMPLING_STATE_DIR,
     ensure_data_directories,
@@ -42,7 +42,7 @@ RANDOM_SEED = 20260330
 ROTATION_MIN_DEG = -90
 ROTATION_MAX_DEG = 90
 DEFAULT_SCENE_SIZE_M = 1024
-DEFAULT_ZOOM = 18
+DEFAULT_IMAGERY_PROVIDER = "sentinel2_l2a"
 
 COUNTRY_RUNS: List[Dict[str, Any]] = [
     {
@@ -51,7 +51,7 @@ COUNTRY_RUNS: List[Dict[str, Any]] = [
         "dataset_name": "germany",
         "target_images": 1000,
         "size_m": DEFAULT_SCENE_SIZE_M,
-        "zoom": DEFAULT_ZOOM,
+        "imagery_provider": DEFAULT_IMAGERY_PROVIDER,
     }
 ]
 
@@ -65,7 +65,7 @@ class CountryRun:
     dataset_name: str
     target_images: int
     size_m: int
-    zoom: int
+    imagery_provider: str | None
 
 
 def parse_country_runs(raw_runs: List[Dict[str, Any]]) -> List[CountryRun]:
@@ -80,7 +80,9 @@ def parse_country_runs(raw_runs: List[Dict[str, Any]]) -> List[CountryRun]:
                 dataset_name=str(raw_run["dataset_name"]),
                 target_images=int(raw_run["target_images"]),
                 size_m=int(raw_run.get("size_m", DEFAULT_SCENE_SIZE_M)),
-                zoom=int(raw_run.get("zoom", DEFAULT_ZOOM)),
+                imagery_provider=(
+                    str(raw_run.get("imagery_provider", "")).strip() or None
+                ),
             )
         )
     return runs
@@ -189,7 +191,7 @@ def process_country_run(
                 center_lon=float(lon),
                 size_m=country.size_m,
                 rotation_deg=int(rng.integers(ROTATION_MIN_DEG, ROTATION_MAX_DEG + 1)),
-                zoom=country.zoom,
+                imagery_provider=country.imagery_provider,
             )
         )
 

@@ -12,8 +12,8 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from satellite_osm_downloader.src.slyosm.osm_export import export_dataset_to_archive
-from satellite_osm_downloader.src.slyosm.settings import (
+from import_osm.src.slyosm.osm_export import export_dataset_to_archive
+from import_osm.src.slyosm.settings import (
     ensure_data_directories,
     load_environment,
 )

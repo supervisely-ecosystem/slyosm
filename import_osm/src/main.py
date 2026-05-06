@@ -7,6 +7,7 @@ from typing import List, Tuple
 import numpy as np
 import osmnx as ox
 import supervisely as sly
+from pydtmdl import ImageryProvider
 from supervisely.app.widgets import (
     Button,
     Card,
@@ -27,22 +28,28 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from satellite_osm_downloader.src.slyosm.geometry import SceneRequest, build_grid_scenes
-from satellite_osm_downloader.src.slyosm.osm_config import (
+from import_osm.src.slyosm.geometry import SceneRequest, build_grid_scenes
+from import_osm.src.slyosm.osm_config import (
     load_osm_class_specs,
     parse_osm_class_specs,
     serialize_osm_class_specs,
 )
-from satellite_osm_downloader.src.slyosm.sampling import (
+from import_osm.src.slyosm.sampling import (
     build_area_polygon_wgs84,
     generate_random_coordinates,
 )
-from satellite_osm_downloader.src.slyosm.scene_downloader import (
+from import_osm.src.slyosm.scene_downloader import (
+    INTERFACE_MODE_MULTIVIEW,
+    INTERFACE_MODE_ONLY_DTM,
+    INTERFACE_MODE_ONLY_SATELLITE,
+    INTERFACE_MODE_OVERLAY,
+    TARGET_GEOMETRY_MASK,
+    TARGET_GEOMETRY_POLYGON,
     ensure_project_and_dataset,
     process_scenes,
     save_dataset_custom_data,
 )
-from satellite_osm_downloader.src.slyosm.settings import (
+from import_osm.src.slyosm.settings import (
     OSM_CLASSES_PATH,
     build_generated_name,
     ensure_data_directories,
@@ -54,6 +61,17 @@ APP_DIR = Path(__file__).resolve().parents[1]
 MODE_COORDINATES = "Coordinates"
 MODE_RANDOM = "Random"
 MODE_GRID = "Grid"
+AUTO_PROVIDER_VALUE = "auto"
+INTERFACE_MODE_LABELS = {
+    INTERFACE_MODE_MULTIVIEW: "Multiview (default)",
+    INTERFACE_MODE_OVERLAY: "Overlay",
+    INTERFACE_MODE_ONLY_SATELLITE: "Only Satellite",
+    INTERFACE_MODE_ONLY_DTM: "Only DTM",
+}
+TARGET_GEOMETRY_LABELS = {
+    TARGET_GEOMETRY_POLYGON: "Polygons (default)",
+    TARGET_GEOMETRY_MASK: "Masks (legacy for OSM polygons)",
+}
 
 
 class DownloaderState(object):
@@ -129,12 +147,54 @@ mode_tabs = RadioTabs(
     contents=[coordinates_container, random_container, grid_container],
 )
 
-zoom_select = SelectString(values=["14", "16", "18"], labels=["14", "16", "18"])
-zoom_select.set_value("18")
-zoom_field = Field(
-    title="Zoom level",
-    description="Fixed zoom options supported by the downloader.",
-    content=zoom_select,
+imagery_provider_classes = sorted(
+    ImageryProvider.get_non_base_providers(), key=lambda provider: provider.code()
+)
+imagery_provider_values = [AUTO_PROVIDER_VALUE] + [
+    provider.code() for provider in imagery_provider_classes
+]
+imagery_provider_labels = ["Auto (best for location)"] + [
+    "{name} ({code})".format(name=provider.name(), code=provider.code())
+    for provider in imagery_provider_classes
+]
+imagery_provider_select = SelectString(
+    values=imagery_provider_values,
+    labels=imagery_provider_labels,
+)
+imagery_provider_select.set_value(AUTO_PROVIDER_VALUE)
+imagery_provider_field = Field(
+    title="Imagery provider",
+    description="Select a pydtmdl provider or let pydtmdl auto-pick the best provider for each scene.",
+    content=imagery_provider_select,
+)
+
+interface_mode_values = [
+    INTERFACE_MODE_MULTIVIEW,
+    INTERFACE_MODE_OVERLAY,
+    INTERFACE_MODE_ONLY_SATELLITE,
+    INTERFACE_MODE_ONLY_DTM,
+]
+interface_mode_select = SelectString(
+    values=interface_mode_values,
+    labels=[INTERFACE_MODE_LABELS[value] for value in interface_mode_values],
+)
+interface_mode_select.set_value(INTERFACE_MODE_MULTIVIEW)
+interface_mode_field = Field(
+    title="Supervisely Interface Mode",
+    description="Choose how downloaded layers are uploaded and visualized in Supervisely.",
+    content=interface_mode_select,
+)
+
+target_geometry_values = [TARGET_GEOMETRY_POLYGON, TARGET_GEOMETRY_MASK]
+target_geometry_select = SelectString(
+    values=target_geometry_values,
+    labels=[TARGET_GEOMETRY_LABELS[value] for value in target_geometry_values],
+)
+target_geometry_select.set_value(TARGET_GEOMETRY_POLYGON)
+target_geometry_field = Field(
+    title="Target Geometry",
+    description="Choose how imported OSM features are uploaded: as polygon objects (default, including buffered roads/points) or as bitmap masks.",
+    content=target_geometry_select,
 )
 
 tile_size_value = InputNumber(value=1024, min=200, max=20000, step=50, width=220)
@@ -292,7 +352,10 @@ def _sample_rotations(count: int) -> List[int]:
 
 def _build_scenes_from_ui() -> List[SceneRequest]:
     active_mode = mode_tabs.get_active_tab()
-    zoom = int(zoom_select.get_value())
+    selected_provider = imagery_provider_select.get_value()
+    imagery_provider = (
+        None if selected_provider in {None, "", AUTO_PROVIDER_VALUE} else selected_provider
+    )
 
     if active_mode == MODE_GRID:
         top_left_lat, top_left_lon = _parse_coordinate_pair(
@@ -304,7 +367,14 @@ def _build_scenes_from_ui() -> List[SceneRequest]:
         rotation_deg = int(rotation_single.get_value())
         prefix = sanitize_filename(build_generated_name("grid"))
         return build_grid_scenes(
-            prefix, top_left_lat, top_left_lon, rows, cols, size_m, rotation_deg, zoom
+            prefix,
+            top_left_lat,
+            top_left_lon,
+            rows,
+            cols,
+            size_m,
+            rotation_deg,
+            imagery_provider,
         )
 
     if active_mode == MODE_COORDINATES:
@@ -333,17 +403,17 @@ def _build_scenes_from_ui() -> List[SceneRequest]:
                 center_lon=float(lon),
                 size_m=int(tile_sizes[index - 1]),
                 rotation_deg=float(rotations[index - 1]),
-                zoom=zoom,
+                imagery_provider=imagery_provider,
             )
         )
     return scenes
 
 
-def _resolve_destination(class_specs):
+def _resolve_destination(class_specs, polygon_target_geometry: str):
     selected_project_id = destination.get_selected_project_id()
     selected_dataset_id = destination.get_selected_dataset_id()
     project_name = destination.get_project_name().strip() or build_generated_name(
-        "satellite_osm"
+        "import_osm"
     )
     dataset_name = destination.get_dataset_name().strip() or build_generated_name(
         "download"
@@ -356,6 +426,7 @@ def _resolve_destination(class_specs):
         project_name=project_name,
         dataset_id=selected_dataset_id,
         dataset_name=dataset_name,
+        polygon_target_geometry=polygon_target_geometry,
     )
 
 
@@ -432,8 +503,13 @@ def start_download() -> None:
         class_specs = parse_osm_class_specs(osm_editor.get_text())
         scenes = _build_scenes_from_ui()
         download_osm = download_osm_switch.is_on()
+        interface_mode = interface_mode_select.get_value()
+        polygon_target_geometry = target_geometry_select.get_value()
 
-        _, dataset_info, project_meta = _resolve_destination(class_specs)
+        _, dataset_info, project_meta = _resolve_destination(
+            class_specs,
+            polygon_target_geometry,
+        )
         save_dataset_custom_data(api, dataset_info.id, class_specs)
 
         with progress(message="Downloading scenes", total=len(scenes)) as progress_bar:
@@ -443,6 +519,8 @@ def start_download() -> None:
                 project_meta=project_meta,
                 class_specs=class_specs,
                 scenes=scenes,
+                interface_mode=interface_mode,
+                polygon_target_geometry=polygon_target_geometry,
                 download_osm=download_osm,
                 should_stop=lambda: state.stop_requested,
                 progress_callback=lambda _index, _total, _scene: progress_bar.update(1),
@@ -487,7 +565,9 @@ settings_card = Card(
     description="Configure image size, rotation, OSM classes, and whether annotations should be downloaded.",
     content=Container(
         [
-            zoom_field,
+            imagery_provider_field,
+            interface_mode_field,
+            target_geometry_field,
             tile_size_field,
             rotation_field,
             download_osm_field,
