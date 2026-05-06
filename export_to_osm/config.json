@@ -4,6 +4,10 @@
   "name": "Export To OSM",
   "description": "Export Supervisely image datasets with geo metadata to OSM XML archives.",
   "categories": ["export", "images", "data operations"],
+  "need_gpu": false,
+  "community_agent": true,
+  "docker_image": "iwatkot/slyosm:latest",
+  "instance_version": "6.15.35",
   "headless": true,
   "entrypoint": "python src/main.py",
   "context_menu": {

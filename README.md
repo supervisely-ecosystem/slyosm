@@ -1,80 +1,36 @@
-# maps4fssly
+# SlyOSM Apps Collection
 
-End-to-end script to:
-1. Download satellite imagery with `pydtmdl` (provider-based, no zoom parameter).
-2. Fetch OSM features with `osmnx`.
-3. Convert them to instance masks.
-4. Upload image + annotation + geospatial metadata to Supervisely.
+Collection of Supervisely apps for importing and exporting geospatial image data with OSM metadata.
 
-## Setup
+## Apps
 
-1. Install dependencies:
+1. [Import OSM](./import_osm/README.md)
+2. [Export To OSM](./export_to_osm/README.md)
 
-	```
-	pip install -r requirements.txt
-	```
+## Repository Layout
 
-2. Configure Supervisely auth in `~/supervisely.env`:
-	- `SERVER_ADDRESS`
-	- `API_TOKEN`
+- `import_osm/`: Supervisely import app (UI + downloader pipeline).
+- `export_to_osm/`: Supervisely export app (dataset to OSM XML).
+- `.github/workflows/`: Docker build and Supervisely release workflows.
+- `Dockerfile`: Custom image used by both apps.
 
-3. Configure workspace info in `local.env`:
-	- `TEAM_ID`
-	- `WORKSPACE_ID`
-	- optional `PROJECT_ID` to upload into an existing project
+## Build And Release
 
-4. Edit class-to-OSM mapping in `src/osm_classes.json` if needed.
+1. Build and push a Docker image from GitHub Actions:
+   - Run workflow: `Docker Image Build`
+   - Required secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`
+2. Release apps to Supervisely:
+   - For tagged releases: `Release` workflow
+   - For branch releases: `Release branch` workflow
+   - For manual production publish: `Publish app to production` workflow
 
-5. Edit scene list in `src/main.py` (`SCENES`) for batch processing.
+Required repository secrets:
 
-## Run
+- `SUPERVISELY_DEV_API_TOKEN`
+- `SUPERVISELY_PRIVATE_DEV_API_TOKEN`
+- `SUPERVISELY_PROD_API_TOKEN`
 
-```
-python src/main.py
-```
+Required repository variables:
 
-Generated files:
-- Downloaded images: `data/images/`
-- Per-image metadata JSON: `data/meta/`
-
-## Production Generator (OSM -> Supervisely)
-
-Use `src/osm_to_sly.py` for production pre-generation of training data.
-
-This script is non-CLI by design. Configure values at the top of the file:
-- `PROJECT_NAME` (default: `Training Data (RAW)`)
-- `COUNTRY_RUNS` (for example, Germany -> dataset `germany`, `target_images=1000`)
-- sampling/randomization constants
-
-Behavior:
-- Randomly samples unique coordinates inside each configured country boundary.
-- Prevents duplicate sampled coordinates with persistent state files in `data/meta/sampling/`.
-- Uploads each sample as image + masks + metadata into the target Supervisely dataset.
-
-Run:
-
-```
-python src/osm_to_sly.py
-```
-
-## Reverse Export (Supervisely -> OSM)
-
-Use `src/sly_to_osm.py` to reconstruct an OSM XML from a Supervisely image annotation.
-
-It reads:
-- image annotation (instance masks / predictions)
-- image geo metadata (`meta.geo`) uploaded with the image
-- class mapping (`osm_class_specs`) from image metadata, or fallback to `src/osm_classes.json`
-
-Run:
-
-```
-python src/sly_to_osm.py
-```
-
-Before running, set values at the top of `src/sly_to_osm.py`:
-- `TEAM_ID`
-- `WORKSPACE_ID`
-- `PROJECT_ID`
-- `IMAGE_ID`
-- optional `OUTPUT_PATH` (leave empty for auto path in `data/osm/`)
+- `SUPERVISELY_DEV_SERVER_ADDRESS`
+- `SUPERVISELY_PROD_SERVER_ADDRESS`
