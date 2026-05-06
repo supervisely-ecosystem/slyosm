@@ -673,16 +673,21 @@ def _download_satellite_layer(
 ) -> Tuple[np.ndarray, Dict[str, Any], str]:
     """Download satellite imagery for scene and return processed RGB layer with metadata."""
 
-    provider_code = scene.imagery_provider or None
+    provider_code = None
     result = ImageryProvider.extract_area(
         center=(float(scene.center_lat), float(scene.center_lon)),
         width_m=int(scene.size_m),
         height_m=int(scene.size_m),
         rotation_deg=float(scene.rotation_deg),
         provider_code=provider_code,
+        fallback_provider_code="sentinel2_l2a",
         directory=str(target_images_dir),
     )
-    return _visualize_array_rgb(result.data), result.metadata.model_dump(), provider_code or "auto"
+    return (
+        _visualize_array_rgb(result.data),
+        result.metadata.model_dump(),
+        "auto",
+    )
 
 
 def _download_dtm_layer(
@@ -692,12 +697,6 @@ def _download_dtm_layer(
     """Download DTM data for scene and return processed RGB layer with metadata."""
 
     dtm_provider_code = None
-    try:
-        best_provider = DTMProvider.get_best((float(scene.center_lat), float(scene.center_lon)))
-        if best_provider is not None:
-            dtm_provider_code = best_provider.code()
-    except Exception:
-        dtm_provider_code = None
 
     result = DTMProvider.extract_area(
         center=(float(scene.center_lat), float(scene.center_lon)),
@@ -708,7 +707,7 @@ def _download_dtm_layer(
         fallback_provider_code="srtm30",
         directory=str(target_images_dir),
     )
-    return _visualize_array_rgb(result.data), result.metadata.model_dump(), (dtm_provider_code or "auto")
+    return _visualize_array_rgb(result.data), result.metadata.model_dump(), "auto"
 
 
 def process_scene(
@@ -802,7 +801,7 @@ def process_scene(
         sly.logger.info(
             "[%s] Downloading satellite imagery with pydtmdl provider=%s...",
             scene.identifier,
-            scene.imagery_provider or "auto",
+            "auto",
         )
         satellite_array, satellite_meta, satellite_provider_requested = _download_satellite_layer(
             scene, target_images_dir

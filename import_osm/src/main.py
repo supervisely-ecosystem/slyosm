@@ -7,7 +7,6 @@ from typing import List, Tuple
 import numpy as np
 import osmnx as ox
 import supervisely as sly
-from pydtmdl import ImageryProvider
 from supervisely.app.widgets import (
     Button,
     Card,
@@ -61,7 +60,6 @@ APP_DIR = Path(__file__).resolve().parents[1]
 MODE_COORDINATES = "Coordinates"
 MODE_RANDOM = "Random"
 MODE_GRID = "Grid"
-AUTO_PROVIDER_VALUE = "auto"
 INTERFACE_MODE_LABELS = {
     INTERFACE_MODE_MULTIVIEW: "Multiview (default)",
     INTERFACE_MODE_OVERLAY: "Overlay",
@@ -133,7 +131,12 @@ grid_cols_field = Field(title="Columns", content=grid_cols_input)
 grid_container = Container(
     [
         grid_top_left_field,
-        Container([grid_rows_field, grid_cols_field], direction="horizontal"),
+        Container(
+            [grid_rows_field, grid_cols_field],
+            direction="horizontal",
+            fractions=["0 0 auto", "0 0 auto"],
+            gap=12,
+        ),
     ]
 )
 
@@ -145,27 +148,6 @@ mode_tabs = RadioTabs(
         "Build a contiguous grid from a global top-left corner.",
     ],
     contents=[coordinates_container, random_container, grid_container],
-)
-
-imagery_provider_classes = sorted(
-    ImageryProvider.get_non_base_providers(), key=lambda provider: provider.code()
-)
-imagery_provider_values = [AUTO_PROVIDER_VALUE] + [
-    provider.code() for provider in imagery_provider_classes
-]
-imagery_provider_labels = ["Auto (best for location)"] + [
-    "{name} ({code})".format(name=provider.name(), code=provider.code())
-    for provider in imagery_provider_classes
-]
-imagery_provider_select = SelectString(
-    values=imagery_provider_values,
-    labels=imagery_provider_labels,
-)
-imagery_provider_select.set_value(AUTO_PROVIDER_VALUE)
-imagery_provider_field = Field(
-    title="Imagery provider",
-    description="Select a pydtmdl provider or let pydtmdl auto-pick the best provider for each scene.",
-    content=imagery_provider_select,
 )
 
 interface_mode_values = [
@@ -213,7 +195,8 @@ tile_size_random_fields = Container(
         Field(title="Random max tile size (m)", content=tile_size_max),
     ],
     direction="horizontal",
-    fractions=[1, 1],
+    fractions=["0 0 auto", "0 0 auto"],
+    gap=12,
 )
 tile_size_controls = Container(
     [
@@ -244,7 +227,8 @@ rotation_random_fields = Container(
         Field(title="Random max rotation (deg)", content=rotation_max),
     ],
     direction="horizontal",
-    fractions=[1, 1],
+    fractions=["0 0 auto", "0 0 auto"],
+    gap=12,
 )
 rotation_controls = Container(
     [
@@ -352,12 +336,6 @@ def _sample_rotations(count: int) -> List[int]:
 
 def _build_scenes_from_ui() -> List[SceneRequest]:
     active_mode = mode_tabs.get_active_tab()
-    selected_provider = imagery_provider_select.get_value()
-    imagery_provider = (
-        None
-        if selected_provider in {None, "", AUTO_PROVIDER_VALUE}
-        else selected_provider
-    )
 
     if active_mode == MODE_GRID:
         top_left_lat, top_left_lon = _parse_coordinate_pair(
@@ -376,7 +354,7 @@ def _build_scenes_from_ui() -> List[SceneRequest]:
             cols,
             size_m,
             rotation_deg,
-            imagery_provider,
+            None,
         )
 
     if active_mode == MODE_COORDINATES:
@@ -405,7 +383,7 @@ def _build_scenes_from_ui() -> List[SceneRequest]:
                 center_lon=float(lon),
                 size_m=int(tile_sizes[index - 1]),
                 rotation_deg=float(rotations[index - 1]),
-                imagery_provider=imagery_provider,
+                imagery_provider=None,
             )
         )
     return scenes
@@ -567,7 +545,6 @@ settings_card = Card(
     description="Configure image size, rotation, OSM classes, and whether annotations should be downloaded.",
     content=Container(
         [
-            imagery_provider_field,
             interface_mode_field,
             target_geometry_field,
             tile_size_field,
@@ -583,7 +560,12 @@ run_card = Card(
     content=Container(
         [
             destination_field,
-            Container([start_button, stop_button], direction="horizontal"),
+            Container(
+                [start_button, stop_button],
+                direction="horizontal",
+                fractions=["0 0 auto", "0 0 auto"],
+                gap=12,
+            ),
             progress,
             status_text,
         ]

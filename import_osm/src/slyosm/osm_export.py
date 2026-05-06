@@ -1569,6 +1569,21 @@ def convert_annotation_to_osm(
                         )
                     continue
 
+                if isinstance(label.geometry, sly.Polygon):
+                    polygon_mask = np.zeros(
+                        (geo_context.height, geo_context.width), dtype=np.uint8
+                    )
+                    label.geometry.draw(polygon_mask, color=1)
+                    mask = polygon_mask.astype(bool)
+                    if np.any(mask):
+                        key = (class_name, tuple(sorted(tags.items())))
+                        group = pending_line_bitmap_groups.setdefault(
+                            key,
+                            {"class_name": class_name, "tags": tags, "chunks": []},
+                        )
+                        group["chunks"].append((mask, 0, 0))
+                    continue
+
                 if isinstance(label.geometry, sly.Polyline):
                     points = np.asarray(
                         label.geometry.to_json().get("points", {}).get("exterior", []),
@@ -1584,6 +1599,18 @@ def convert_annotation_to_osm(
                 if isinstance(label.geometry, sly.Bitmap):
                     centroid = bitmap_centroid_xy(label.geometry)
                     if centroid is not None:
+                        point_rc_list = [centroid]
+                elif isinstance(label.geometry, sly.Polygon):
+                    exterior, _ = ring_points_from_polygon(label.geometry)
+                    exterior = clean_ring_xy(exterior)
+                    if exterior.shape[0] >= 3:
+                        centroid = np.asarray(
+                            [
+                                float(np.mean(exterior[:, 0])),
+                                float(np.mean(exterior[:, 1])),
+                            ],
+                            dtype=np.float64,
+                        )
                         point_rc_list = [centroid]
                 elif isinstance(label.geometry, sly.Point):
                     location = (
