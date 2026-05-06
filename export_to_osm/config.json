@@ -9,7 +9,8 @@
   "docker_image": "supervisely/slyosm:0.0.3",
   "instance_version": "6.15.35",
   "headless": true,
-  "entrypoint": "python src/main.py",
+  "entrypoint": "python export_to_osm/src/main.py",
+  "port": 8000,
   "context_menu": {
     "context_category": "Export",
     "target": ["images_dataset"]
