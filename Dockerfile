@@ -1,4 +1,4 @@
-FROM supervisely/base-py-sdk:6.73.564
+FROM supervisely/base-py-sdk-light:6.73.564
 LABEL supervisely-sdk-version="6.73.564"
 
 WORKDIR /app
