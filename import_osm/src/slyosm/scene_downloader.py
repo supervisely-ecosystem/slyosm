@@ -640,10 +640,18 @@ def _resize_to_square_with_aspect(
     right = left + target_size
     bottom = top + target_size
     cropped = resized.crop((left, top, right, bottom))
+
+    # Projective geometry in this pipeline uses pixel-edge coordinates
+    # ([-0.5, width-0.5] x [-0.5, height-0.5]).
+    # Resize transform must preserve that convention before crop.
+    scale_x = float(resized_width) / float(source_width) if source_width > 0 else 1.0
+    scale_y = float(resized_height) / float(source_height) if source_height > 0 else 1.0
+    bias_x = (scale_x - 1.0) * 0.5 - float(left)
+    bias_y = (scale_y - 1.0) * 0.5 - float(top)
     source_to_output_h = np.asarray(
         [
-            [float(scale), 0.0, float(-left)],
-            [0.0, float(scale), float(-top)],
+            [float(scale_x), 0.0, float(bias_x)],
+            [0.0, float(scale_y), float(bias_y)],
             [0.0, 0.0, 1.0],
         ],
         dtype=np.float64,

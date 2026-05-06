@@ -193,10 +193,10 @@ def build_scene_geo_context(
 
     destination_pixels = np.asarray(
         [
-            [0.0, 0.0],
-            [float(image_width - 1), 0.0],
-            [float(image_width - 1), float(image_height - 1)],
-            [0.0, float(image_height - 1)],
+            [-0.5, -0.5],
+            [float(image_width) - 0.5, -0.5],
+            [float(image_width) - 0.5, float(image_height) - 0.5],
+            [-0.5, float(image_height) - 0.5],
         ],
         dtype=np.float64,
     )
@@ -313,8 +313,34 @@ def ring_to_supervisely_points(ring_uv: np.ndarray, width: int, height: int) -> 
 
     points_rc = []
     for col_value, row_value in ring_uv:
-        col_index = int(round(float(np.clip(col_value, 0.0, float(width - 1)))))
-        row_index = int(round(float(np.clip(row_value, 0.0, float(height - 1)))))
+        col_index = int(
+            np.clip(np.floor(float(col_value) + 0.5), 0.0, float(width - 1))
+        )
+        row_index = int(
+            np.clip(np.floor(float(row_value) + 0.5), 0.0, float(height - 1))
+        )
+        point = (row_index, col_index)
+        if not points_rc or points_rc[-1] != point:
+            points_rc.append(point)
+
+    if len(points_rc) >= 2 and points_rc[0] == points_rc[-1]:
+        points_rc.pop()
+
+    if len(set(points_rc)) < 3:
+        return []
+    return points_rc
+
+
+def ring_to_supervisely_polygon_points(
+    ring_uv: np.ndarray, width: int, height: int
+) -> List[Tuple[int, int]]:
+    """Convert ring points to edge-inclusive vertices for polygon geometry upload."""
+
+    points_rc = []
+    for col_value, row_value in ring_uv:
+        # For vector polygons, allow right/bottom boundary vertices at width/height.
+        col_index = int(np.clip(np.rint(float(col_value)), 0.0, float(width)))
+        row_index = int(np.clip(np.rint(float(row_value)), 0.0, float(height)))
         point = (row_index, col_index)
         if not points_rc or points_rc[-1] != point:
             points_rc.append(point)
@@ -388,7 +414,7 @@ def polygon_to_bitmap(
     if pixel_geometry is None:
         return None
 
-    clip_rect = box(0.0, 0.0, float(width - 1), float(height - 1))
+    clip_rect = box(-0.5, -0.5, float(width) - 0.5, float(height) - 0.5)
     clipped_geometry = pixel_geometry.intersection(clip_rect)
     if clipped_geometry.is_empty:
         return None
@@ -433,7 +459,7 @@ def polygon_to_supervisely_polygons(
     if pixel_geometry is None:
         return []
 
-    clip_rect = box(0.0, 0.0, float(width - 1), float(height - 1))
+    clip_rect = box(-0.5, -0.5, float(width) - 0.5, float(height) - 0.5)
     clipped_geometry = pixel_geometry.intersection(clip_rect)
     if clipped_geometry.is_empty:
         return []
@@ -449,14 +475,16 @@ def polygon_to_supervisely_polygons(
     result = []
     for clipped_polygon in clipped_polygons:
         exterior_uv = np.asarray(clipped_polygon.exterior.coords[:-1], dtype=np.float64)
-        exterior_rc = ring_to_supervisely_points(exterior_uv, width, height)
+        exterior_rc = ring_to_supervisely_polygon_points(exterior_uv, width, height)
         if len(exterior_rc) < 3:
             continue
 
         interior_rc_list = []
         for interior in clipped_polygon.interiors:
             interior_uv = np.asarray(interior.coords[:-1], dtype=np.float64)
-            interior_rc = ring_to_supervisely_points(interior_uv, width, height)
+            interior_rc = ring_to_supervisely_polygon_points(
+                interior_uv, width, height
+            )
             if len(interior_rc) >= 3:
                 interior_rc_list.append(interior_rc)
 

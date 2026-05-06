@@ -70,7 +70,7 @@ INTERFACE_MODE_LABELS = {
 }
 TARGET_GEOMETRY_LABELS = {
     TARGET_GEOMETRY_POLYGON: "Polygons (default)",
-    TARGET_GEOMETRY_MASK: "Masks (legacy for OSM polygons)",
+    TARGET_GEOMETRY_MASK: "Masks",
 }
 
 
@@ -354,7 +354,9 @@ def _build_scenes_from_ui() -> List[SceneRequest]:
     active_mode = mode_tabs.get_active_tab()
     selected_provider = imagery_provider_select.get_value()
     imagery_provider = (
-        None if selected_provider in {None, "", AUTO_PROVIDER_VALUE} else selected_provider
+        None
+        if selected_provider in {None, "", AUTO_PROVIDER_VALUE}
+        else selected_provider
     )
 
     if active_mode == MODE_GRID:
