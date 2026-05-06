@@ -1,4 +1,4 @@
-supervisely
+supervisely==6.73.564
 python-dotenv
 pydtmdl
 osmnx
