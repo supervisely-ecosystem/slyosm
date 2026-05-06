@@ -19,6 +19,7 @@ Collection of Supervisely apps for importing and exporting geospatial image data
 1. Build and push a Docker image from GitHub Actions:
    - Run workflow: `Docker Image Build`
    - Required secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`
+   - Set `DOCKERHUB_USERNAME=supervisely` to publish as `supervisely/slyosm`
 2. Release apps to Supervisely:
    - For tagged releases: `Release` workflow
    - For branch releases: `Release branch` workflow
