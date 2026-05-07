@@ -1,5 +1,5 @@
 <div align="center" markdown>
-<img src="https://github.com/supervisely-ecosystem/slyosm/releases/download/0.0.1/import-poster.png"/>
+<img src="https://github.com/supervisely-ecosystem/slyosm/releases/download/0.0.1/poster-satellite-dtm-osm-downloader-res.jpg"/>
 
 # Satellite, DTM & OSM Downloader
 
