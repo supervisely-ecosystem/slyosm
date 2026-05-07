@@ -1,5 +1,5 @@
 <div align="center" markdown>
-<img src="https://github.com/supervisely-ecosystem/slyosm/releases/download/0.0.1/export-poster.png"/>
+<img src="https://github.com/supervisely-ecosystem/slyosm/releases/download/0.0.1/poster-export-osm-format-res.jpg"/>
 
 # Export to OSM Format
 
@@ -38,31 +38,33 @@ This app is designed as the companion to the [Satellite, DTM & OSM Downloader](h
 For each dataset the archive contains three subdirectories, following standard Supervisely download conventions with one additional folder:
 
 ```
-img/
-    image_001.png
-    image_002.png
-    ...
-ann/
-    image_001.png.json
-    image_002.png.json
-    ...
-osm/
-    image_001.png.osm
-    image_002.png.osm
-    ...
+.
+├── 📂 img/
+│   ├── 🖼️ image_001.png
+│   ├── 🖼️ image_002.png
+│   └── 🖼️ ...
+├── 📂 ann/
+│   ├── 📝 image_001.png.json
+│   ├── 📝 image_002.png.json
+│   └── 📝 ...
+└── 📂 osm/
+    ├── 🗺️ image_001.png.osm
+    ├── 🗺️ image_002.png.osm
+    └── 🗺️ ...
 ```
 
 When exporting at **project level**, each dataset gets its own subdirectory:
 
 ```
-dataset_name_1/
-    img/
-    ann/
-    osm/
-dataset_name_2/
-    img/
-    ann/
-    osm/
+📂 project_root/
+├── 📁 dataset_name_1/
+│   ├── 📂 img/
+│   ├── 📂 ann/
+│   └── 📂 osm/
+└── 📁 dataset_name_2/
+    ├── 📂 img/
+    ├── 📂 ann/
+    └── 📂 osm/
 ```
 
 The archive is a `.tar` file uploaded to Team Files under `/slyosm/osm_exports/` by default. The output path can be changed by setting the `FOLDER` environment variable before launching the app.
