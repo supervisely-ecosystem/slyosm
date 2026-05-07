@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import os
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, List, Tuple
 
 import supervisely as sly
 
@@ -12,10 +11,16 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from import_osm.src.slyosm.osm_export import export_dataset_to_archive
+from import_osm.src.slyosm.osm_export import (
+    SuperviselyDatasetExportResult,
+    export_dataset_to_supervisely_dir,
+)
 from import_osm.src.slyosm.settings import (
+    ARCHIVE_DIR,
+    OSM_EXPORT_DIR,
     ensure_data_directories,
     load_environment,
+    sanitize_filename,
 )
 
 APP_DIR = Path(__file__).resolve().parents[1]
@@ -47,16 +52,40 @@ class ProgressReporter:
             self._last_logged_at = now
 
 
-def _resolve_dataset_id() -> int:
-    if os.environ.get("DATASET_ID", "").strip() == "":
-        os.environ.pop("DATASET_ID", None)
+def _resolve_context(api: sly.Api) -> Tuple[int, List[Any], str]:
+    """Resolve export targets from environment.
 
-    dataset_id = sly.env.dataset_id(raise_not_found=False)
-    if dataset_id is None:
-        raise RuntimeError(
-            "Dataset id is not available. Launch the app from an images dataset or set DATASET_ID in the environment."
-        )
-    return int(dataset_id)
+    Prefers DATASET_ID over PROJECT_ID when both are set.
+
+    :return: ``(project_id, list_of_dataset_infos, export_name)``
+    """
+    dataset_id_raw = sly.env.dataset_id(raise_not_found=False)
+    if dataset_id_raw is not None:
+        dataset_info = api.dataset.get_info_by_id(int(dataset_id_raw))
+        if dataset_info is None:
+            raise RuntimeError(
+                "Dataset with id={id} was not found.".format(id=dataset_id_raw)
+            )
+        return dataset_info.project_id, [dataset_info], dataset_info.name
+
+    project_id_raw = sly.env.project_id(raise_not_found=False)
+    if project_id_raw is not None:
+        project_info = api.project.get_info_by_id(int(project_id_raw))
+        if project_info is None:
+            raise RuntimeError(
+                "Project with id={id} was not found.".format(id=project_id_raw)
+            )
+        datasets = api.dataset.get_list(int(project_id_raw))
+        if not datasets:
+            raise RuntimeError(
+                "Project '{name}' contains no datasets.".format(name=project_info.name)
+            )
+        return int(project_id_raw), datasets, project_info.name
+
+    raise RuntimeError(
+        "No export target found. Launch the app from a dataset or project context, "
+        "or set DATASET_ID / PROJECT_ID in the environment."
+    )
 
 
 def _resolve_remote_dir() -> str:
@@ -85,12 +114,33 @@ def _log_mapping_source(dataset_info: Any) -> None:
     specs = custom_data.get("osm_class_specs")
     if isinstance(specs, list) and len(specs) > 0:
         sly.logger.info(
-            "Using dataset custom OSM mapping with %s class entries.",
+            "Dataset '%s': using custom OSM mapping with %s class entries.",
+            dataset_info.name,
             len(specs),
         )
     else:
         sly.logger.info(
-            "Dataset custom OSM mapping is missing, the shared default mapping will be used."
+            "Dataset '%s': no custom OSM mapping found, using shared default.",
+            dataset_info.name,
+        )
+
+
+def _log_dataset_result(result: SuperviselyDatasetExportResult) -> None:
+    osm_count = sum(1 for img in result.images if img.osm_path is not None)
+    if result.failures:
+        sly.logger.warning(
+            "Dataset '%s': %s image(s) exported (%s with OSM), %s failure(s).",
+            result.dataset_name,
+            len(result.images),
+            osm_count,
+            len(result.failures),
+        )
+    else:
+        sly.logger.info(
+            "Dataset '%s': %s image(s) exported (%s with OSM).",
+            result.dataset_name,
+            len(result.images),
+            osm_count,
         )
 
 
@@ -98,43 +148,69 @@ def _log_mapping_source(dataset_info: Any) -> None:
 def main() -> None:
     api = sly.Api.from_env()
     team_id = sly.env.team_id()
-    dataset_id = _resolve_dataset_id()
     remote_dir = _resolve_remote_dir()
 
-    dataset_info = api.dataset.get_info_by_id(dataset_id)
-    if dataset_info is None:
-        raise RuntimeError(
-            "Dataset with id={dataset_id} was not found.".format(dataset_id=dataset_id)
-        )
+    project_id, datasets, export_name = _resolve_context(api)
+    is_single_dataset = len(datasets) == 1
 
     sly.logger.info(
-        "Starting OSM export for dataset '%s' (%s).",
-        dataset_info.name,
-        dataset_id,
+        "Starting OSM export for %s dataset(s) (export name: '%s').",
+        len(datasets),
+        export_name,
     )
     sly.logger.info("Resolved Team Files output directory: %s", remote_dir)
-    _log_mapping_source(dataset_info)
 
-    result = export_dataset_to_archive(
-        api=api,
-        dataset_id=dataset_id,
-        progress_callback=ProgressReporter(),
+    anchor_id = datasets[0].id if is_single_dataset else project_id
+    export_slug = sanitize_filename(
+        "{name}_{id}".format(name=export_name, id=anchor_id)
+    )
+    export_dir = OSM_EXPORT_DIR / export_slug
+    archive_path = ARCHIVE_DIR / "{slug}.tar".format(slug=export_slug)
+
+    reporter = ProgressReporter()
+    all_results: List[SuperviselyDatasetExportResult] = []
+
+    for dataset_info in datasets:
+        _log_mapping_source(dataset_info)
+        dataset_output_dir = (
+            export_dir
+            if is_single_dataset
+            else export_dir / sanitize_filename(dataset_info.name)
+        )
+        result = export_dataset_to_supervisely_dir(
+            api=api,
+            dataset_id=dataset_info.id,
+            output_dir=dataset_output_dir,
+            progress_callback=reporter,
+        )
+        _log_dataset_result(result)
+        all_results.append(result)
+
+    total_images = sum(len(r.images) for r in all_results)
+    total_failures = sum(len(r.failures) for r in all_results)
+    total_osm = sum(
+        sum(1 for img in r.images if img.osm_path is not None) for r in all_results
     )
 
-    remote_path = _build_remote_path(remote_dir, result.archive_path.name)
-    api.file.upload(team_id, str(result.archive_path), remote_path)
+    sly.fs.archive_directory(str(export_dir), str(archive_path))
 
-    if len(result.failures) == 0:
+    remote_path = _build_remote_path(remote_dir, archive_path.name)
+    api.file.upload(team_id, str(archive_path), remote_path)
+
+    if total_failures == 0:
         sly.logger.info(
-            "Finished export. Exported %s image(s). Archive uploaded to %s",
-            len(result.images),
+            "Finished export. %s image(s) exported (%s with OSM). Archive uploaded to %s",
+            total_images,
+            total_osm,
             remote_path,
         )
     else:
         sly.logger.warning(
-            "Finished export with %s success(es) and %s failure(s). Archive uploaded to %s",
-            len(result.images),
-            len(result.failures),
+            "Finished export with %s success(es) (%s with OSM) and %s failure(s). "
+            "Archive uploaded to %s",
+            total_images,
+            total_osm,
+            total_failures,
             remote_path,
         )
         sly.logger.warning(

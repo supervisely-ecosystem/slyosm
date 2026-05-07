@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import time
 import xml.etree.ElementTree as ET
 from collections import deque
@@ -129,6 +130,28 @@ class DatasetExportResult:
     output_dir: Path
     archive_path: Path
     images: List[ExportedImageResult]
+    failures: List[DatasetExportFailure]
+
+
+@dataclass(frozen=True)
+class SuperviselyImageExportResult:
+    """Result of exporting one image to the Supervisely download format."""
+
+    image_id: int
+    image_name: str
+    img_path: Path
+    ann_path: Path
+    osm_path: Optional[Path]
+
+
+@dataclass(frozen=True)
+class SuperviselyDatasetExportResult:
+    """Result of exporting a dataset to the Supervisely download format."""
+
+    dataset_id: int
+    dataset_name: str
+    output_dir: Path
+    images: List[SuperviselyImageExportResult]
     failures: List[DatasetExportFailure]
 
 
@@ -1927,6 +1950,146 @@ def export_dataset_to_archive(
         dataset_id=int(dataset_id),
         output_dir=resolved_output_dir,
         archive_path=resolved_archive_path,
+        images=results,
+        failures=failures,
+    )
+
+
+def _export_image_to_supervisely_dir(
+    api: sly.Api,
+    image_info: Any,
+    dataset_custom_data: Optional[Dict[str, Any]],
+    project_meta: sly.ProjectMeta,
+    img_dir: Path,
+    ann_dir: Path,
+    osm_dir: Path,
+    fallback_config_path: Path,
+) -> SuperviselyImageExportResult:
+    image_name = str(image_info.name)
+
+    img_path = img_dir / image_name
+    api.image.download_path(image_info.id, str(img_path))
+
+    ann_path = ann_dir / "{name}.json".format(name=image_name)
+    ann_json = api.annotation.download_json(image_info.id)
+    ann_path.write_text(json.dumps(ann_json, indent=2), encoding="utf-8")
+
+    osm_path = None
+    image_meta = image_info.meta if isinstance(image_info.meta, dict) else {}
+    image_geo = image_meta.get("geo") if isinstance(image_meta, dict) else None
+    if isinstance(image_geo, dict):
+        osm_out_path = osm_dir / "{name}.osm".format(name=image_name)
+        export_result = export_image_to_osm(
+            api=api,
+            image_info=image_info,
+            dataset_custom_data=dataset_custom_data,
+            project_meta=project_meta,
+            output_dir=osm_dir,
+            fallback_config_path=fallback_config_path,
+            output_path=osm_out_path,
+        )
+        osm_path = export_result.output_path
+    else:
+        sly.logger.warning(
+            "Image '%s' has no geo metadata; OSM export skipped.", image_name
+        )
+
+    return SuperviselyImageExportResult(
+        image_id=int(image_info.id),
+        image_name=image_name,
+        img_path=img_path,
+        ann_path=ann_path,
+        osm_path=osm_path,
+    )
+
+
+def export_dataset_to_supervisely_dir(
+    api: sly.Api,
+    dataset_id: int,
+    output_dir: Path,
+    fallback_config_path: Path = OSM_CLASSES_PATH,
+    progress_callback: Optional[Callable[[int, int, Any], None]] = None,
+) -> SuperviselyDatasetExportResult:
+    """Export a dataset to the Supervisely download format with an extra osm/ folder.
+
+    Creates three subfolders under ``output_dir``: ``img/`` with original images,
+    ``ann/`` with Supervisely annotation JSONs (``{image_name}.json``), and ``osm/``
+    with OSM XML files (``{image_name}.osm``).  Images without geo metadata are
+    exported to ``img/`` and ``ann/`` only.
+
+    :param api: Supervisely API client.
+    :param dataset_id: Dataset identifier.
+    :param output_dir: Directory for the three output subfolders.
+    :param fallback_config_path: Default class mapping path.
+    :param progress_callback: Optional callback executed after each image attempt.
+    :return: Dataset export result.
+    """
+
+    dataset_info = api.dataset.get_info_by_id(dataset_id)
+    if dataset_info is None:
+        raise RuntimeError(
+            "Dataset with id={id} was not found.".format(id=dataset_id)
+        )
+
+    images = api.image.get_list(dataset_id, sort="name", sort_order="asc")
+    if not images:
+        raise RuntimeError(
+            "Dataset '{name}' contains no images to export.".format(
+                name=dataset_info.name
+            )
+        )
+
+    img_dir = output_dir / "img"
+    ann_dir = output_dir / "ann"
+    osm_dir = output_dir / "osm"
+    img_dir.mkdir(parents=True, exist_ok=True)
+    ann_dir.mkdir(parents=True, exist_ok=True)
+    osm_dir.mkdir(parents=True, exist_ok=True)
+
+    dataset_custom_data = (
+        dataset_info.custom_data if isinstance(dataset_info.custom_data, dict) else {}
+    )
+    project_meta = sly.ProjectMeta.from_json(
+        api.project.get_meta(dataset_info.project_id)
+    )
+
+    results: List[SuperviselyImageExportResult] = []
+    failures: List[DatasetExportFailure] = []
+    total = len(images)
+
+    for index, image_info in enumerate(images, start=1):
+        try:
+            results.append(
+                _export_image_to_supervisely_dir(
+                    api=api,
+                    image_info=image_info,
+                    dataset_custom_data=dataset_custom_data,
+                    project_meta=project_meta,
+                    img_dir=img_dir,
+                    ann_dir=ann_dir,
+                    osm_dir=osm_dir,
+                    fallback_config_path=fallback_config_path,
+                )
+            )
+        except Exception as exc:
+            sly.logger.exception(
+                "Failed to export image '%s' (%s).", image_info.name, image_info.id
+            )
+            failures.append(
+                DatasetExportFailure(
+                    image_id=int(image_info.id),
+                    image_name=str(image_info.name),
+                    error=str(exc),
+                )
+            )
+
+        if progress_callback is not None:
+            progress_callback(index, total, image_info)
+
+    return SuperviselyDatasetExportResult(
+        dataset_id=int(dataset_id),
+        dataset_name=str(dataset_info.name),
+        output_dir=output_dir,
         images=results,
         failures=failures,
     )

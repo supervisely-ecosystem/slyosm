@@ -1,8 +1,8 @@
 {
   "type": "app",
   "version": "2.0.0",
-  "name": "Import OSM",
-  "description": "Import satellite imagery with optional OSM annotations into Supervisely datasets using pydtmdl providers.",
+  "name": "Satellite, DTM & OSM Downloader",
+  "description": "Download georeferenced satellite imagery, DTM elevation tiles, and OpenStreetMap vector annotations into Supervisely datasets.",
   "categories": ["import", "images", "synthetic", "data operations"],
   "need_gpu": false,
   "community_agent": true,

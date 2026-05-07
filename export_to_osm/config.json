@@ -1,8 +1,8 @@
 {
   "type": "app",
   "version": "2.0.0",
-  "name": "Export To OSM",
-  "description": "Export Supervisely image datasets with geo metadata to OSM XML archives.",
+  "name": "Export to OSM Format",
+  "description": "Export Supervisely annotated datasets with geo metadata to OSM XML files alongside original images and annotations in Supervisely format.",
   "categories": ["export", "images", "data operations"],
   "need_gpu": false,
   "community_agent": true,
@@ -13,7 +13,7 @@
   "port": 8000,
   "context_menu": {
     "context_category": "Export",
-    "target": ["images_dataset"]
+    "target": ["images_dataset", "images_project"]
   },
   "task_location": "workspace_tasks"
 }
