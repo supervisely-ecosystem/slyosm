@@ -13,11 +13,11 @@
   <a href="#license-and-attribution">License & Attribution</a>
 </p>
 
-[![](https://img.shields.io/badge/supervisely-ecosystem-brightgreen)](https://ecosystem.supervisely.com/apps/YOUR_ORG/YOUR_REPO/import_osm)
+[![](https://img.shields.io/badge/supervisely-ecosystem-brightgreen)](https://ecosystem.supervisely.com/apps/supervisely-ecosystem/slyosm/import_osm)
 [![](https://img.shields.io/badge/slack-chat-green.svg?logo=slack)](https://supervisely.com/slack)
-![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/YOUR_ORG/YOUR_REPO)
-[![views](https://app.supervisely.com/img/badges/views/YOUR_ORG/YOUR_REPO/import_osm.png)](https://supervisely.com)
-[![runs](https://app.supervisely.com/img/badges/runs/YOUR_ORG/YOUR_REPO/import_osm.png)](https://supervisely.com)
+![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/supervisely-ecosystem/slyosm)
+[![views](https://app.supervisely.com/img/badges/views/supervisely-ecosystem/slyosm/import_osm.png)](https://supervisely.com)
+[![runs](https://app.supervisely.com/img/badges/runs/supervisely-ecosystem/slyosm/import_osm.png)](https://supervisely.com)
 
 </div>
 
@@ -191,23 +191,17 @@ The companion **Export to OSM Format** app reads this mapping back from the data
 
 **Step 1:** Run the app from the Supervisely Ecosystem or from the workspace Apps panel.<br>
 
-<!-- TODO: add screenshot of the app launch dialog -->
-<img src="https://github.com/user-attachments/assets/REPLACE_WITH_SCREENSHOT_LAUNCH"/><br>
-
 **Step 2:** Select a **Download Mode** and fill in the corresponding parameters (coordinates, place name, or grid settings).<br>
 
-<!-- TODO: add screenshot of download mode selection -->
-<img src="https://github.com/user-attachments/assets/REPLACE_WITH_SCREENSHOT_MODES"/><br>
+<img src="https://github.com/supervisely-ecosystem/slyosm/releases/download/0.0.1/scr1e.png"/><br>
 
 **Step 3:** Configure **Tile Size**, **Rotation**, **Interface Mode**, **Target Geometry**, and the **OSM class mapping** JSON as needed.<br>
 
-<!-- TODO: add screenshot of settings panel -->
-<img src="https://github.com/user-attachments/assets/REPLACE_WITH_SCREENSHOT_SETTINGS"/><br>
+<img src="https://github.com/supervisely-ecosystem/slyosm/releases/download/0.0.1/scr2e.png"/><br>
 
 **Step 4:** Click **Run** to start the download. The app uploads each tile as it finishes — you can open the dataset and start labeling while the download is still in progress.<br>
 
-<!-- TODO: add screenshot of running progress -->
-<img src="https://github.com/user-attachments/assets/REPLACE_WITH_SCREENSHOT_PROGRESS"/><br>
+<img src="https://github.com/supervisely-ecosystem/slyosm/releases/download/0.0.1/scr3e.png"/><br>
 
 ---
 
