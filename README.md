@@ -1,37 +1,35 @@
-# SlyOSM Apps Collection
+# Satellite, DTM & OSM — Supervisely Apps Collection
 
-Collection of Supervisely apps for importing and exporting geospatial image data with OSM metadata.
+Download georeferenced satellite imagery, DTM elevation tiles, and OpenStreetMap vector annotations directly into Supervisely, then export annotated datasets back to OSM XML format.
 
-## Apps
+1. [Satellite, DTM & OSM Downloader](./import_osm/README.md)
 
-1. [Import OSM](./import_osm/README.md)
-2. [Export To OSM](./export_to_osm/README.md)
+<img src="https://github.com/user-attachments/assets/REPLACE_WITH_IMPORT_APP_POSTER"/>
+
+2. [Export to OSM Format](./export_to_osm/README.md)
+
+<img src="https://github.com/user-attachments/assets/REPLACE_WITH_EXPORT_APP_POSTER"/>
+
+---
 
 ## Repository Layout
 
-- `import_osm/`: Supervisely import app (UI + downloader pipeline).
-- `export_to_osm/`: Supervisely export app (dataset to OSM XML).
-- `.github/workflows/`: Docker build and Supervisely release workflows.
-- `Dockerfile`: Custom image used by both apps.
+- `import_osm/` — Supervisely interactive app: UI + downloader pipeline (satellite, DTM, OSM).
+- `export_to_osm/` — Supervisely headless export app: annotations → OSM XML + Supervisely format archive.
+- `.github/workflows/` — Docker build and Supervisely release workflows.
+- `Dockerfile` — Custom image used by both apps.
 
-## Build And Release
+## Build and Release
 
 1. Build and push a Docker image from GitHub Actions:
    - Run workflow: `Docker Image Build`
    - Required secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`
    - Set `DOCKERHUB_USERNAME=supervisely` to publish as `supervisely/slyosm`
 2. Release apps to Supervisely:
-   - For tagged releases: `Release` workflow
-   - For branch releases: `Release branch` workflow
-   - For manual production publish: `Publish app to production` workflow
+   - Tagged releases: `Release` workflow
+   - Branch releases: `Release branch` workflow
+   - Manual production publish: `Publish app to production` workflow
 
-Required repository secrets:
+Required repository secrets: `SUPERVISELY_DEV_API_TOKEN`, `SUPERVISELY_PRIVATE_DEV_API_TOKEN`, `SUPERVISELY_PROD_API_TOKEN`
 
-- `SUPERVISELY_DEV_API_TOKEN`
-- `SUPERVISELY_PRIVATE_DEV_API_TOKEN`
-- `SUPERVISELY_PROD_API_TOKEN`
-
-Required repository variables:
-
-- `SUPERVISELY_DEV_SERVER_ADDRESS`
-- `SUPERVISELY_PROD_SERVER_ADDRESS`
+Required repository variables: `SUPERVISELY_DEV_SERVER_ADDRESS`, `SUPERVISELY_PROD_SERVER_ADDRESS`
