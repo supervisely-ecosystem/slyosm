@@ -16,7 +16,6 @@ from import_osm.src.slyosm.osm_export import (
     export_dataset_to_supervisely_dir,
 )
 from import_osm.src.slyosm.settings import (
-    ARCHIVE_DIR,
     OSM_EXPORT_DIR,
     ensure_data_directories,
     load_environment,
@@ -24,7 +23,6 @@ from import_osm.src.slyosm.settings import (
 )
 
 APP_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_REMOTE_DIR = "/slyosm/osm_exports"
 
 load_environment(APP_DIR / "local.env")
 ensure_data_directories()
@@ -88,25 +86,6 @@ def _resolve_context(api: sly.Api) -> Tuple[int, List[Any], str]:
     )
 
 
-def _resolve_remote_dir() -> str:
-    folder = sly.env.folder(raise_not_found=False)
-    if folder is None:
-        return DEFAULT_REMOTE_DIR
-
-    normalized = folder.strip()
-    if normalized == "":
-        return DEFAULT_REMOTE_DIR
-    if normalized == "/":
-        return "/"
-    return "/" + normalized.strip("/")
-
-
-def _build_remote_path(remote_dir: str, file_name: str) -> str:
-    if remote_dir == "/":
-        return "/" + file_name
-    return remote_dir.rstrip("/") + "/" + file_name
-
-
 def _log_mapping_source(dataset_info: Any) -> None:
     custom_data = (
         dataset_info.custom_data if isinstance(dataset_info.custom_data, dict) else {}
@@ -147,8 +126,6 @@ def _log_dataset_result(result: SuperviselyDatasetExportResult) -> None:
 @sly.handle_exceptions
 def main() -> None:
     api = sly.Api.from_env()
-    team_id = sly.env.team_id()
-    remote_dir = _resolve_remote_dir()
 
     project_id, datasets, export_name = _resolve_context(api)
     is_single_dataset = len(datasets) == 1
@@ -158,14 +135,12 @@ def main() -> None:
         len(datasets),
         export_name,
     )
-    sly.logger.info("Resolved Team Files output directory: %s", remote_dir)
 
     anchor_id = datasets[0].id if is_single_dataset else project_id
     export_slug = sanitize_filename(
         "{name}_{id}".format(name=export_name, id=anchor_id)
     )
     export_dir = OSM_EXPORT_DIR / export_slug
-    archive_path = ARCHIVE_DIR / "{slug}.tar".format(slug=export_slug)
 
     reporter = ProgressReporter()
     all_results: List[SuperviselyDatasetExportResult] = []
@@ -192,30 +167,24 @@ def main() -> None:
         sum(1 for img in r.images if img.osm_path is not None) for r in all_results
     )
 
-    sly.fs.archive_directory(str(export_dir), str(archive_path))
-
-    remote_path = _build_remote_path(remote_dir, archive_path.name)
-    api.file.upload(team_id, str(archive_path), remote_path)
-
     if total_failures == 0:
         sly.logger.info(
-            "Finished export. %s image(s) exported (%s with OSM). Archive uploaded to %s",
+            "Finished export. %s image(s) exported (%s with OSM).",
             total_images,
             total_osm,
-            remote_path,
         )
     else:
         sly.logger.warning(
-            "Finished export with %s success(es) (%s with OSM) and %s failure(s). "
-            "Archive uploaded to %s",
+            "Finished export with %s success(es) (%s with OSM) and %s failure(s).",
             total_images,
             total_osm,
             total_failures,
-            remote_path,
         )
         sly.logger.warning(
             "Some images were skipped. See the failure logs above for details."
         )
+
+    sly.output.set_download(str(export_dir))
 
 
 if __name__ == "__main__":
