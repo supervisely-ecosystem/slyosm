@@ -22,20 +22,31 @@ ANNOTATION_BATCH_SIZE = int(os.getenv("SLY_ANN_BATCH_SIZE", "200"))
 
 
 def load_environment(local_env_path: Optional[Path] = None) -> None:
-    """Load local and Supervisely environment files.
+    """Load local and Supervisely environment files in development mode only.
 
     :param local_env_path: Optional path to the local environment file.
     :type local_env_path: Optional[Path]
     """
 
+    import supervisely as sly
+
+    if not sly.is_development():
+        return
+
     resolved_local_env = local_env_path or ROOT_DIR / "local.env"
     supervisely_env_path = Path.home() / "supervisely.env"
 
-    if resolved_local_env.exists():
+    if resolved_local_env.exists() and supervisely_env_path.exists():
+        sly.logger.debug("Running in development mode. Loading .env files.")
         load_dotenv(resolved_local_env)
-
-    if supervisely_env_path.exists():
         load_dotenv(supervisely_env_path)
+    else:
+        sly.logger.warning(
+            "Running in development mode but one or both .env files are missing. "
+            "Local: %s, Supervisely: %s",
+            resolved_local_env,
+            supervisely_env_path,
+        )
 
 
 def ensure_data_directories() -> None:
