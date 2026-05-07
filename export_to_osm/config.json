@@ -14,7 +14,7 @@
   "entrypoint": "python export_to_osm/src/main.py",
   "port": 8000,
   "context_menu": {
-    "context_category": "Export",
+    "context_root": "Download as",
     "target": ["images_dataset", "images_project"]
   },
   "task_location": "workspace_tasks"
