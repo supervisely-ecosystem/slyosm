@@ -9,7 +9,7 @@
   "need_gpu": false,
   "community_agent": true,
   "docker_image": "supervisely/slyosm:0.0.3",
-  "instance_version": "6.15.35",
+  "instance_version": "6.15.60",
   "headless": true,
   "entrypoint": "python export_to_osm/src/main.py",
   "port": 8000,

@@ -9,7 +9,7 @@
   "need_gpu": false,
   "community_agent": true,
   "docker_image": "supervisely/slyosm:0.0.3",
-  "instance_version": "6.15.35",
+  "instance_version": "6.15.60",
   "headless": false,
   "entrypoint": "python -m uvicorn import_osm.src.main:app --host 0.0.0.0 --port 8000",
   "port": 8000,
