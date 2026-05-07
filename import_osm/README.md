@@ -1,5 +1,5 @@
 <div align="center" markdown>
-<img src="https://github.com/user-attachments/assets/REPLACE_WITH_IMPORT_APP_POSTER"/>
+<img src="https://github.com/supervisely-ecosystem/slyosm/releases/download/0.0.1/import-poster.png"/>
 
 # Satellite, DTM & OSM Downloader
 
@@ -29,7 +29,7 @@ This app downloads three types of geospatial data for a set of geographic locati
 2. **DTM (Digital Terrain Model)** — elevation tiles for the same area.
 3. **OpenStreetMap vector features** — roads, buildings, water, forests, and more, fetched from the [OpenStreetMap](https://www.openstreetmap.org/) API and stored as Supervisely object annotations.
 
-All downloaded images carry embedded geo metadata (center coordinates, projection, homography matrix) that the companion [Export to OSM Format](../export_to_osm/README.md) app uses to project annotations back to geographic coordinates.
+All downloaded images carry embedded geo metadata (center coordinates, projection, homography matrix) that the companion [Export to OSM Format](../export_to_osm/README.md) app uses to project annotations back to geographic coordinates and produce `.osm` files ready to open in [JOSM](https://josm.openstreetmap.de/) or any other OSM editor.
 
 ### Imagery and Elevation Coverage
 

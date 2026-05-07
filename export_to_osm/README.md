@@ -1,5 +1,5 @@
 <div align="center" markdown>
-<img src="https://github.com/user-attachments/assets/REPLACE_WITH_EXPORT_APP_POSTER"/>
+<img src="https://github.com/supervisely-ecosystem/slyosm/releases/download/0.0.1/export-poster.png"/>
 
 # Export to OSM Format
 
@@ -69,7 +69,7 @@ The archive is a `.tar` file uploaded to Team Files under `/slyosm/osm_exports/`
 
 ### OSM File Format
 
-Each `.osm` file is a standard [OSM XML](https://wiki.openstreetmap.org/wiki/OSM_XML) file compatible with tools like JOSM, Overpass API, and osmium. Polygon annotations are written as closed ways or multipolygon relations (when holes are present). Line annotations are written as open ways. Point annotations are written as nodes. All IDs are negative (following OSM convention for locally-generated data).
+Each `.osm` file is a standard [OSM XML](https://wiki.openstreetmap.org/wiki/OSM_XML) file compatible with [JOSM](https://josm.openstreetmap.de/), Overpass API, osmium, and other OSM tooling. Polygon annotations are written as closed ways or multipolygon relations (when holes are present). Line annotations are written as open ways. Point annotations are written as nodes. All IDs are negative (following OSM convention for locally-generated data).
 
 ---
 

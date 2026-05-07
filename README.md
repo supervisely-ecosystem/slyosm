@@ -4,11 +4,11 @@ Download georeferenced satellite imagery, DTM elevation tiles, and OpenStreetMap
 
 1. [Satellite, DTM & OSM Downloader](./import_osm/README.md)
 
-<img src="https://github.com/user-attachments/assets/REPLACE_WITH_IMPORT_APP_POSTER"/>
+<img src="https://github.com/supervisely-ecosystem/slyosm/releases/download/0.0.1/import-poster.png"/>
 
 2. [Export to OSM Format](./export_to_osm/README.md)
 
-<img src="https://github.com/user-attachments/assets/REPLACE_WITH_EXPORT_APP_POSTER"/>
+<img src="https://github.com/supervisely-ecosystem/slyosm/releases/download/0.0.1/export-poster.png"/>
 
 ---
 
