@@ -3,6 +3,7 @@
   "version": "2.0.0",
   "name": "Satellite, DTM & OSM Downloader",
   "description": "Download georeferenced satellite imagery, DTM elevation tiles, and OpenStreetMap vector annotations into Supervisely datasets.",
+  "icon_cover": true,
   "poster": "https://github.com/supervisely-ecosystem/slyosm/releases/download/0.0.1/poster-satellite-dtm-osm-downloader-res.jpg",
   "icon": "https://github.com/supervisely-ecosystem/slyosm/releases/download/0.0.1/icon-satellite-dtm-osm-downloader-res.jpg",
   "categories": ["import", "images", "synthetic", "data operations"],
