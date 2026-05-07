@@ -3,6 +3,7 @@
   "version": "2.0.0",
   "name": "Export to OSM Format",
   "description": "Export Supervisely annotated datasets with geo metadata to OSM XML files alongside original images and annotations in Supervisely format.",
+  "icon_cover": true,
   "poster": "https://github.com/supervisely-ecosystem/slyosm/releases/download/0.0.1/poster-export-osm-format-res.jpg",
   "icon": "https://github.com/supervisely-ecosystem/slyosm/releases/download/0.0.1/icon-export-osm-format-res.jpg",
   "categories": ["export", "images", "data operations"],
