@@ -11,7 +11,7 @@
   <a href="#license-and-attribution">License & Attribution</a>
 </p>
 
-[![](https://img.shields.io/badge/supervisely-ecosystem-brightgreen)](https://ecosystem.supervisely.com/apps/supervisely-ecosystem/slyosm/export_to_osm)
+[![](https://img.shields.io/badge/supervisely-ecosystem-brightgreen)](https://ecosystem.supervisely.com/apps/slyosm/export_to_osm)
 [![](https://img.shields.io/badge/slack-chat-green.svg?logo=slack)](https://supervisely.com/slack)
 ![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/supervisely-ecosystem/slyosm)
 [![views](https://app.supervisely.com/img/badges/views/supervisely-ecosystem/slyosm/export_to_osm.png)](https://supervisely.com)
@@ -29,7 +29,7 @@ This headless app exports a Supervisely dataset — or all datasets in a project
 
 The app runs entirely in the background — no UI is shown. When finished, it uploads the archive to Team Files automatically.
 
-This app is designed as the companion to the [Satellite, DTM & OSM Downloader](../import_osm/README.md). Images created by that app carry embedded geo metadata required for the coordinate projection. Images without geo metadata are still exported to `img/` and `ann/`; the OSM export is skipped for those files with a warning in the task log.
+This app is designed as the companion to the [Satellite, DTM & OSM Downloader](https://ecosystem.supervisely.com/apps/slyosm/import_osm). Images created by that app carry embedded geo metadata required for the coordinate projection. Images without geo metadata are still exported to `img/` and `ann/`; the OSM export is skipped for those files with a warning in the task log.
 
 ---
 
@@ -75,7 +75,7 @@ Each `.osm` file is a standard [OSM XML](https://wiki.openstreetmap.org/wiki/OSM
 
 ## OSM Class Mapping
 
-To project pixel-space annotations back to geographic coordinates correctly, the app needs to know which Supervisely class corresponds to which OSM tag. This mapping is read automatically from the **dataset's custom metadata** — it was written there by the [Satellite, DTM & OSM Downloader](../import_osm/README.md) at import time.
+To project pixel-space annotations back to geographic coordinates correctly, the app needs to know which Supervisely class corresponds to which OSM tag. This mapping is read automatically from the **dataset's custom metadata** — it was written there by the [Satellite, DTM & OSM Downloader](https://ecosystem.supervisely.com/apps/slyosm/import_osm) at import time.
 
 **Fallback order:**
 1. Dataset custom metadata (`osm_class_specs` key) — used when the dataset was created by the import app.

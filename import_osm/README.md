@@ -13,7 +13,7 @@
   <a href="#license-and-attribution">License & Attribution</a>
 </p>
 
-[![](https://img.shields.io/badge/supervisely-ecosystem-brightgreen)](https://ecosystem.supervisely.com/apps/supervisely-ecosystem/slyosm/import_osm)
+[![](https://img.shields.io/badge/supervisely-ecosystem-brightgreen)](https://ecosystem.supervisely.com/apps/slyosm/import_osm)
 [![](https://img.shields.io/badge/slack-chat-green.svg?logo=slack)](https://supervisely.com/slack)
 ![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/supervisely-ecosystem/slyosm)
 [![views](https://app.supervisely.com/img/badges/views/supervisely-ecosystem/slyosm/import_osm.png)](https://supervisely.com)
@@ -29,7 +29,7 @@ This app downloads three types of geospatial data for a set of geographic locati
 2. **DTM (Digital Terrain Model)** — elevation tiles for the same area.
 3. **OpenStreetMap vector features** — roads, buildings, water, forests, and more, fetched from the [OpenStreetMap](https://www.openstreetmap.org/) API and stored as Supervisely object annotations.
 
-All downloaded images carry embedded geo metadata (center coordinates, projection, homography matrix) that the companion [Export to OSM Format](../export_to_osm/README.md) app uses to project annotations back to geographic coordinates and produce `.osm` files ready to open in [JOSM](https://josm.openstreetmap.de/) or any other OSM editor.
+All downloaded images carry embedded geo metadata (center coordinates, projection, homography matrix) that the companion [Export to OSM Format](https://ecosystem.supervisely.com/apps/slyosm/export_to_osm) app uses to project annotations back to geographic coordinates and produce `.osm` files ready to open in [JOSM](https://josm.openstreetmap.de/) or any other OSM editor.
 
 ### Imagery and Elevation Coverage
 
