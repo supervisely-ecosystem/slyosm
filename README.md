@@ -12,4 +12,4 @@ A complete round-trip workflow for georeferenced satellite imagery, DTM elevatio
 
 3. [Import Images with OSM](./import_images_with_osm/README.md)
 
-<img src="https://github.com/supervisely-ecosystem/slyosm/releases/download/0.0.1/poster-import-images-with-osm-res.jpg"/>
+<img src="https://github.com/supervisely-ecosystem/slyosm/releases/download/0.0.1/poster-import-osm-annotations.2.jpg"/>

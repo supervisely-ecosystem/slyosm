@@ -1,5 +1,5 @@
 <div align="center" markdown>
-<img src="https://github.com/supervisely-ecosystem/slyosm/releases/download/0.0.1/poster-import-images-with-osm-res.jpg"/>
+<img src="https://github.com/supervisely-ecosystem/slyosm/releases/download/0.0.1/poster-import-osm-annotations.2.jpg"/>
 
 # Import Images with OSM
 
