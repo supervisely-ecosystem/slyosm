@@ -145,8 +145,24 @@ def main() -> None:
 
     project_meta_json = api.project.get_meta(project_id)
     project_info = api.project.get_info_by_id(project_id)
-    if project_info is not None and project_info.settings:
-        project_meta_json["projectSettings"] = project_info.settings
+
+    # Merge API project settings with required defaults.
+    # The Supervisely SDK schema-validates projectSettings and requires both
+    # "multiView" and "labelingInterface" to always be present.
+    project_settings = {}
+    if project_info is not None and isinstance(project_info.settings, dict):
+        project_settings = dict(project_info.settings)
+    if "multiView" not in project_settings:
+        project_settings["multiView"] = {
+            "enabled": False,
+            "tagName": None,
+            "tagId": None,
+            "isSynced": False,
+        }
+    if "labelingInterface" not in project_settings:
+        project_settings["labelingInterface"] = "default"
+    project_meta_json["projectSettings"] = project_settings
+
     meta_path = export_dir / "meta.json"
     meta_path.write_text(json.dumps(project_meta_json, indent=2), encoding="utf-8")
     sly.logger.info("Written meta.json to '%s'.", meta_path)
