@@ -1963,6 +1963,7 @@ def _export_image_to_supervisely_dir(
     img_dir: Path,
     ann_dir: Path,
     osm_dir: Path,
+    meta_dir: Path,
     fallback_config_path: Path,
     overlay_dir: Optional[Path] = None,
     overlay_images: Optional[List[Any]] = None,
@@ -1976,6 +1977,11 @@ def _export_image_to_supervisely_dir(
     ann_json = api.annotation.download_json(image_info.id)
     ann_path.write_text(json.dumps(ann_json, indent=2), encoding="utf-8")
 
+    image_meta = image_info.meta if isinstance(image_info.meta, dict) else {}
+    if image_meta:
+        meta_path_file = meta_dir / "{name}.json".format(name=image_name)
+        meta_path_file.write_text(json.dumps(image_meta, indent=2), encoding="utf-8")
+
     if overlay_dir is not None and overlay_images:
         image_stem = Path(image_name).stem
         this_overlay_dir = overlay_dir / image_stem
@@ -1985,8 +1991,7 @@ def _export_image_to_supervisely_dir(
             api.image.download_path(overlay_img.id, str(overlay_img_path))
 
     osm_path = None
-    image_meta = image_info.meta if isinstance(image_info.meta, dict) else {}
-    image_geo = image_meta.get("geo") if isinstance(image_meta, dict) else None
+    image_geo = image_meta.get("geo") if image_meta else None
     if isinstance(image_geo, dict):
         osm_out_path = osm_dir / "{name}.osm".format(name=image_name)
         export_result = export_image_to_osm(
@@ -2075,9 +2080,11 @@ def export_dataset_to_supervisely_dir(
     img_dir = output_dir / "img"
     ann_dir = output_dir / "ann"
     osm_dir = output_dir / "osm"
+    meta_dir = output_dir / "meta"
     img_dir.mkdir(parents=True, exist_ok=True)
     ann_dir.mkdir(parents=True, exist_ok=True)
     osm_dir.mkdir(parents=True, exist_ok=True)
+    meta_dir.mkdir(parents=True, exist_ok=True)
 
     overlay_dir: Optional[Path] = None
     if is_overlay:
@@ -2099,6 +2106,7 @@ def export_dataset_to_supervisely_dir(
                     img_dir=img_dir,
                     ann_dir=ann_dir,
                     osm_dir=osm_dir,
+                    meta_dir=meta_dir,
                     fallback_config_path=fallback_config_path,
                     overlay_dir=overlay_dir,
                     overlay_images=overlay_by_parent.get(int(image_info.id), []),
