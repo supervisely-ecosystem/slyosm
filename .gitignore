@@ -5,3 +5,6 @@ __pycache__/
 cache/
 data/
 temp/
+overlayproject/
+7223_Multiview Object Matching Sample/
+.claude/

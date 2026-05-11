@@ -1964,6 +1964,8 @@ def _export_image_to_supervisely_dir(
     ann_dir: Path,
     osm_dir: Path,
     fallback_config_path: Path,
+    overlay_dir: Optional[Path] = None,
+    overlay_images: Optional[List[Any]] = None,
 ) -> SuperviselyImageExportResult:
     image_name = str(image_info.name)
 
@@ -1973,6 +1975,14 @@ def _export_image_to_supervisely_dir(
     ann_path = ann_dir / "{name}.json".format(name=image_name)
     ann_json = api.annotation.download_json(image_info.id)
     ann_path.write_text(json.dumps(ann_json, indent=2), encoding="utf-8")
+
+    if overlay_dir is not None and overlay_images:
+        image_stem = Path(image_name).stem
+        this_overlay_dir = overlay_dir / image_stem
+        this_overlay_dir.mkdir(parents=True, exist_ok=True)
+        for overlay_img in overlay_images:
+            overlay_img_path = this_overlay_dir / str(overlay_img.name)
+            api.image.download_path(overlay_img.id, str(overlay_img_path))
 
     osm_path = None
     image_meta = image_info.meta if isinstance(image_info.meta, dict) else {}
@@ -2012,14 +2022,14 @@ def export_dataset_to_supervisely_dir(
 ) -> SuperviselyDatasetExportResult:
     """Export a dataset to the Supervisely download format with an extra osm/ folder.
 
-    Creates three subfolders under ``output_dir``: ``img/`` with original images,
-    ``ann/`` with Supervisely annotation JSONs (``{image_name}.json``), and ``osm/``
-    with OSM XML files (``{image_name}.osm``).  Images without geo metadata are
-    exported to ``img/`` and ``ann/`` only.
+    Creates subfolders under ``output_dir``: ``img/``, ``ann/``, ``osm/``, and
+    ``overlay/`` (for overlay projects).  Images without geo metadata are exported
+    to ``img/`` and ``ann/`` only.  Overlay images are downloaded to
+    ``overlay/{primary_stem}/{overlay_name}`` instead of ``img/``.
 
     :param api: Supervisely API client.
     :param dataset_id: Dataset identifier.
-    :param output_dir: Directory for the three output subfolders.
+    :param output_dir: Directory for the output subfolders.
     :param fallback_config_path: Default class mapping path.
     :param progress_callback: Optional callback executed after each image attempt.
     :return: Dataset export result.
@@ -2031,20 +2041,13 @@ def export_dataset_to_supervisely_dir(
             "Dataset with id={id} was not found.".format(id=dataset_id)
         )
 
-    images = api.image.get_list(dataset_id, sort="name", sort_order="asc")
-    if not images:
+    all_images = api.image.get_list(dataset_id, sort="name", sort_order="asc")
+    if not all_images:
         raise RuntimeError(
             "Dataset '{name}' contains no images to export.".format(
                 name=dataset_info.name
             )
         )
-
-    img_dir = output_dir / "img"
-    ann_dir = output_dir / "ann"
-    osm_dir = output_dir / "osm"
-    img_dir.mkdir(parents=True, exist_ok=True)
-    ann_dir.mkdir(parents=True, exist_ok=True)
-    osm_dir.mkdir(parents=True, exist_ok=True)
 
     dataset_custom_data = (
         dataset_info.custom_data if isinstance(dataset_info.custom_data, dict) else {}
@@ -2053,11 +2056,39 @@ def export_dataset_to_supervisely_dir(
         api.project.get_meta(dataset_info.project_id)
     )
 
+    labeling_interface = str(project_meta.labeling_interface or "")
+    is_overlay = labeling_interface == "overlay"
+
+    # Separate primary images from overlay images (overlay images have parent_id set).
+    primary_images: List[Any] = []
+    overlay_by_parent: Dict[int, List[Any]] = {}
+    for img in all_images:
+        if getattr(img, "parent_id", None) is None:
+            primary_images.append(img)
+        else:
+            overlay_by_parent.setdefault(int(img.parent_id), []).append(img)
+
+    # Fallback: if no parent_id separation happened, treat everything as primary.
+    if not primary_images:
+        primary_images = all_images
+
+    img_dir = output_dir / "img"
+    ann_dir = output_dir / "ann"
+    osm_dir = output_dir / "osm"
+    img_dir.mkdir(parents=True, exist_ok=True)
+    ann_dir.mkdir(parents=True, exist_ok=True)
+    osm_dir.mkdir(parents=True, exist_ok=True)
+
+    overlay_dir: Optional[Path] = None
+    if is_overlay:
+        overlay_dir = output_dir / "overlay"
+        overlay_dir.mkdir(parents=True, exist_ok=True)
+
     results: List[SuperviselyImageExportResult] = []
     failures: List[DatasetExportFailure] = []
-    total = len(images)
+    total = len(primary_images)
 
-    for index, image_info in enumerate(images, start=1):
+    for index, image_info in enumerate(primary_images, start=1):
         try:
             results.append(
                 _export_image_to_supervisely_dir(
@@ -2069,6 +2100,8 @@ def export_dataset_to_supervisely_dir(
                     ann_dir=ann_dir,
                     osm_dir=osm_dir,
                     fallback_config_path=fallback_config_path,
+                    overlay_dir=overlay_dir,
+                    overlay_images=overlay_by_parent.get(int(image_info.id), []),
                 )
             )
         except Exception as exc:

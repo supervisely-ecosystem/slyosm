@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import time
 from pathlib import Path
@@ -128,7 +129,6 @@ def main() -> None:
     api = sly.Api.from_env()
 
     project_id, datasets, export_name = _resolve_context(api)
-    is_single_dataset = len(datasets) == 1
 
     sly.logger.info(
         "Starting OSM export for %s dataset(s) (export name: '%s').",
@@ -136,22 +136,24 @@ def main() -> None:
         export_name,
     )
 
-    anchor_id = datasets[0].id if is_single_dataset else project_id
+    anchor_id = datasets[0].id if len(datasets) == 1 else project_id
     export_slug = sanitize_filename(
         "{name}_{id}".format(name=export_name, id=anchor_id)
     )
     export_dir = OSM_EXPORT_DIR / export_slug
+    export_dir.mkdir(parents=True, exist_ok=True)
+
+    project_meta_json = api.project.get_meta(project_id)
+    meta_path = export_dir / "meta.json"
+    meta_path.write_text(json.dumps(project_meta_json, indent=2), encoding="utf-8")
+    sly.logger.info("Written meta.json to '%s'.", meta_path)
 
     reporter = ProgressReporter()
     all_results: List[SuperviselyDatasetExportResult] = []
 
     for dataset_info in datasets:
         _log_mapping_source(dataset_info)
-        dataset_output_dir = (
-            export_dir
-            if is_single_dataset
-            else export_dir / sanitize_filename(dataset_info.name)
-        )
+        dataset_output_dir = export_dir / sanitize_filename(dataset_info.name)
         result = export_dataset_to_supervisely_dir(
             api=api,
             dataset_id=dataset_info.id,
