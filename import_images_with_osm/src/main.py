@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import tarfile
 import tempfile
+import zipfile
 from pathlib import Path
 
 import supervisely as sly
@@ -24,12 +25,17 @@ def _download_source(api: sly.Api, team_id: int, remote_path: str, local_dir: Pa
     if not remote_path:
         raise ValueError("Team Files path must not be empty.")
 
-    if remote_path.endswith(".tar"):
-        local_archive = local_dir / "archive.tar"
+    suffix = Path(remote_path).suffix.lower()
+    if suffix in (".tar", ".zip"):
+        local_archive = local_dir / ("archive" + suffix)
         sly.logger.info("Downloading archive '%s' from Team Files.", remote_path)
         api.file.download(team_id, remote_path, str(local_archive))
-        with tarfile.open(local_archive) as tar:
-            tar.extractall(str(local_dir))
+        if suffix == ".zip":
+            with zipfile.ZipFile(local_archive) as zf:
+                zf.extractall(str(local_dir))
+        else:
+            with tarfile.open(local_archive) as tar:
+                tar.extractall(str(local_dir))
         local_archive.unlink(missing_ok=True)
         subdirs = [p for p in local_dir.iterdir() if p.is_dir()]
         if len(subdirs) == 1 and not (local_dir / "meta.json").exists():

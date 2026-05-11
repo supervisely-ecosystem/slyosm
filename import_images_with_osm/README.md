@@ -81,7 +81,7 @@ The same structure supports exporting a project with **multiple datasets**:
     └── ...
 ```
 
-Both `.tar` archives and unpacked directories are accepted as the source path.
+`.tar` and `.zip` archives as well as unpacked directories are accepted as the source path.
 
 ---
 

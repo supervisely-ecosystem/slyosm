@@ -2,7 +2,7 @@
   "type": "app",
   "version": "2.0.0",
   "name": "Import Images with OSM",
-  "description": "Import images together with OSM XML annotations into Supervisely. Accepts a structured directory or .tar archive containing images, OSM files, per-image geo metadata, and optional Supervisely JSON annotations. Restores project class definitions and interface settings (overlay or multiview) from meta.json.",
+  "description": "Import images with OSM annotations into Supervisely.",
   "icon_cover": true,
   "poster": "https://github.com/supervisely-ecosystem/slyosm/releases/download/0.0.1/poster-import-images-with-osm-res.jpg",
   "icon": "https://github.com/supervisely-ecosystem/slyosm/releases/download/0.0.1/icon-import-images-with-osm-res.jpg",
