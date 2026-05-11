@@ -144,6 +144,9 @@ def main() -> None:
     export_dir.mkdir(parents=True, exist_ok=True)
 
     project_meta_json = api.project.get_meta(project_id)
+    project_info = api.project.get_info_by_id(project_id)
+    if project_info is not None and project_info.settings:
+        project_meta_json["projectSettings"] = project_info.settings
     meta_path = export_dir / "meta.json"
     meta_path.write_text(json.dumps(project_meta_json, indent=2), encoding="utf-8")
     sly.logger.info("Written meta.json to '%s'.", meta_path)
