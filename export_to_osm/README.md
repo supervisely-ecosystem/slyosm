@@ -25,49 +25,90 @@ This headless app exports a Supervisely dataset — or all datasets in a project
 
 - **Original images** as downloaded from the imagery provider.
 - **Supervisely annotation JSON files** in the standard Supervisely format.
+- **Per-image metadata JSON files** preserving the embedded geospatial information required for geographic reprojection and re-import.
+- **Project-level `meta.json`** with class definitions, tag schemas, and interface settings (multiview, overlay, or default).
 - **OSM XML files** with each annotation projected back to geographic coordinates (longitude/latitude) and written as OSM ways, relations, and nodes with the appropriate OSM tags.
 
 The app runs entirely in the background — no UI is shown. When finished, it uploads the archive to Team Files automatically.
 
-This app is designed as the companion to the [Satellite, DTM & OSM Downloader](https://ecosystem.supervisely.com/apps/slyosm/import_osm). Images created by that app carry embedded geo metadata required for the coordinate projection. Images without geo metadata are still exported to `img/` and `ann/`; the OSM export is skipped for those files with a warning in the task log.
+This app is designed as the companion to the [Satellite, DTM & OSM Downloader](https://ecosystem.supervisely.com/apps/slyosm/import_osm). Images created by that app carry embedded geo metadata required for the coordinate projection. Images without geo metadata are still exported to `img/` and `ann/`; the OSM export is skipped and no `meta/` file is written for those images, with a warning in the task log.
 
 ---
 
 ## Output Format
 
-For each dataset the archive contains three subdirectories, following standard Supervisely download conventions with one additional folder:
+The export always produces a valid Supervisely project directory. A project-level `meta.json` sits at the root, and each dataset gets its own named subdirectory containing `img/`, `ann/`, `meta/`, and `osm/`. For overlay projects an additional `overlay/` subdirectory is created.
 
 ```
-.
-├── 📂 img/
-│   ├── 🖼️ image_001.png
-│   ├── 🖼️ image_002.png
-│   └── 🖼️ ...
-├── 📂 ann/
-│   ├── 📝 image_001.png.json
-│   ├── 📝 image_002.png.json
-│   └── 📝 ...
-└── 📂 osm/
-    ├── 🗺️ image_001.png.osm
-    ├── 🗺️ image_002.png.osm
-    └── 🗺️ ...
+📂 export_root/
+├── 📄 meta.json
+└── 📁 dataset_name/
+    ├── 📂 img/
+    │   ├── 🖼️ image_001.png
+    │   └── 🖼️ ...
+    ├── 📂 ann/
+    │   ├── 📝 image_001.png.json
+    │   └── 📝 ...
+    ├── 📂 meta/
+    │   ├── 📝 image_001.png.json
+    │   └── 📝 ...
+    └── 📂 osm/
+        ├── 🗺️ image_001.png.osm
+        └── 🗺️ ...
 ```
 
-When exporting at **project level**, each dataset gets its own subdirectory:
+When the project uses the **overlay** interface, each dataset also contains:
 
 ```
-📂 project_root/
+    └── 📂 overlay/
+        └── 📁 image_001/
+            └── 🖼️ image_001_dtm.png
+```
+
+When exporting a **project with multiple datasets**, each dataset gets its own subdirectory under the same root:
+
+```
+📂 export_root/
+├── 📄 meta.json
 ├── 📁 dataset_name_1/
 │   ├── 📂 img/
 │   ├── 📂 ann/
+│   ├── 📂 meta/
 │   └── 📂 osm/
 └── 📁 dataset_name_2/
     ├── 📂 img/
     ├── 📂 ann/
+    ├── 📂 meta/
     └── 📂 osm/
 ```
 
 The archive is a `.tar` file uploaded to Team Files under `/slyosm/osm_exports/` by default. The output path can be changed by setting the `FOLDER` environment variable before launching the app.
+
+### meta.json
+
+The top-level `meta.json` is the standard Supervisely project metadata file. It contains:
+
+- **`classes`** — all object class definitions (name, shape, color) used in the annotations.
+- **`tags`** — all tag schemas defined for the project (value type, color, allowed values).
+- **`projectType`** — always `"images"` for datasets produced by the downloader.
+- **`projectSettings`** — interface configuration for the labeling tool:
+  - For **multiview** projects: `multiView.enabled`, `multiView.tagName`, and `multiView.tagId` record which tag links paired satellite and DTM images together.
+  - For **overlay** projects: `labelingInterface` is set to `"overlay"`, telling Supervisely to render the DTM layer on top of the satellite image.
+  - For **default** projects (satellite-only or DTM-only): `labelingInterface` is `"default"`.
+
+This file is required for a valid Supervisely project import. Without it, Supervisely cannot reconstruct class colors, tag schemas, or the correct labeling interface.
+
+### meta/ — Per-Image Geospatial Metadata
+
+Each file in `meta/` is named `{image_name}.json` and contains the metadata dictionary stored on that image in Supervisely. For images produced by the downloader, this always includes a `geo` object with:
+
+- **`crs_wkt`** — the coordinate reference system of the tile in WKT format, used to convert pixel coordinates to a local projected CRS.
+- **`pixel_to_local_h`** — the 3×3 homography matrix that maps pixel coordinates to the local CRS.
+- **`bbox_lonlat`** — the geographic bounding box of the tile (longitude/latitude of all four corners).
+- **`scene_id`**, **`rotation_deg`**, **`tile_size_m`** — scene identity and acquisition parameters.
+- **`multiview_layer`** — present in multiview projects; value is `"satellite"` or `"dtm"`, identifying each image's role in the pair.
+
+This metadata is what makes OSM export possible: the coordinate transform encoded here is what reprojects annotated pixel polygons back to real-world longitude/latitude. Preserving it in the export means the archive is self-contained — it can be re-imported into Supervisely and the OSM export can be run again without any data loss.
 
 ### OSM File Format
 
