@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import numpy as np
 import supervisely as sly
 from pyproj import CRS, Transformer
+from shapely.geometry import LineString as ShapelyLineString
 
 from import_osm.src.slyosm.osm_config import (
     OSMClassSpec,
@@ -140,6 +141,40 @@ def _parse_osm_xml(
     return nodes, ways, relations
 
 
+def _buffer_line_latlon_to_pixel_pts(
+    lat_lon_list: List[Tuple[float, float]],
+    buffer_m: float,
+    pixel_to_local_h_list: List[List[float]],
+    crs_wkt: str,
+) -> List[sly.PointLocation]:
+    """Buffer a road centerline in local CRS and return pixel-space polygon exterior.
+
+    Mirrors the downloader's geometry_to_polygons + buffer_m approach so that
+    line-class features are reconstructed as correctly-shaped road polygons rather
+    than thin node-sliver polygons.
+    """
+    h = np.array(pixel_to_local_h_list, dtype=np.float64)
+    h_inv = np.linalg.inv(h)
+    local_crs = CRS.from_wkt(crs_wkt)
+    from_wgs84 = Transformer.from_crs(CRS.from_epsg(4326), local_crs, always_xy=True)
+
+    local_coords = [from_wgs84.transform(lon, lat) for lat, lon in lat_lon_list]
+    if len(local_coords) < 2:
+        return []
+
+    line = ShapelyLineString(local_coords)
+    effective_buffer = max(float(buffer_m), 1.0)
+    buffered = line.buffer(effective_buffer)
+    if buffered.is_empty:
+        return []
+
+    pts = []
+    for lx, ly in buffered.exterior.coords:
+        pt = h_inv @ np.array([lx, ly, 1.0], dtype=np.float64)
+        pts.append(sly.PointLocation(row=float(pt[1] / pt[2]), col=float(pt[0] / pt[2])))
+    return pts
+
+
 def _latlon_list_to_pixel_points(
     lat_lon_list: List[Tuple[float, float]],
     lonlat_to_pixel: Callable[[float, float], Tuple[float, float]],
@@ -243,16 +278,23 @@ def osm_file_to_annotation(
         if obj_class is None:
             continue
 
-        pts = _latlon_list_to_pixel_points(coords, lonlat_to_pixel)
-        is_closed = len(coords) >= 3 and coords[0] == coords[-1]
-
-        if obj_class.geometry_type == sly.Polygon:
-            exterior = pts[:-1] if is_closed else pts
+        if spec.geometry == "line":
+            # The exporter skeletonizes buffered road polygons down to OSM centerlines.
+            # Reconstruct the original polygon by re-buffering in local CRS, matching
+            # what the downloader does with geometry_to_polygons + buffer_m.
+            exterior = _buffer_line_latlon_to_pixel_pts(coords, spec.buffer_m, h_list, crs_wkt)
             if len(exterior) >= 3:
                 labels.append(sly.Label(sly.Polygon(exterior=exterior, interior=[]), obj_class))
-        elif obj_class.geometry_type == sly.Polyline:
-            if len(pts) >= 2:
-                labels.append(sly.Label(sly.Polyline(pts), obj_class))
+        else:
+            pts = _latlon_list_to_pixel_points(coords, lonlat_to_pixel)
+            is_closed = len(coords) >= 3 and coords[0] == coords[-1]
+            if obj_class.geometry_type == sly.Polygon:
+                exterior = pts[:-1] if is_closed else pts
+                if len(exterior) >= 3:
+                    labels.append(sly.Label(sly.Polygon(exterior=exterior, interior=[]), obj_class))
+            elif obj_class.geometry_type == sly.Polyline:
+                if len(pts) >= 2:
+                    labels.append(sly.Label(sly.Polyline(pts), obj_class))
 
     # Multipolygon relations
     for outer_ids, inner_ids, tags in relations:
