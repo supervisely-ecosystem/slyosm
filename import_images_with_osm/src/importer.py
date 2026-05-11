@@ -200,7 +200,15 @@ def osm_file_to_annotation(
         return sly.Annotation(img_size=img_size)
 
     h_list = geo.get("pixel_to_local_h")
-    crs_wkt = geo.get("crs_wkt")
+    # The downloader stores the CRS under "local_crs_wkt"; support both names.
+    crs_wkt = geo.get("local_crs_wkt") or geo.get("crs_wkt")
+    if not crs_wkt:
+        projjson = geo.get("local_crs_projjson")
+        if projjson:
+            try:
+                crs_wkt = CRS.from_json_dict(projjson).to_wkt()
+            except Exception:
+                pass
     if not h_list or not crs_wkt:
         return sly.Annotation(img_size=img_size)
 

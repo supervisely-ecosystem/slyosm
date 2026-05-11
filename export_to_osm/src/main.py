@@ -146,18 +146,21 @@ def main() -> None:
     project_meta_json = api.project.get_meta(project_id)
     project_info = api.project.get_info_by_id(project_id)
 
-    # Determine the actual labeling interface from the parsed project meta.
-    project_meta = sly.ProjectMeta.from_json(project_meta_json)
-    labeling_interface = str(project_meta.labeling_interface or "")
-    is_multiview = labeling_interface == "multi_view"
-    is_overlay = labeling_interface == "overlay"
-
-    # For multiview projects, preserve tagName/tagId from the API settings.
-    api_mv = {}
+    # Resolve interface type.
+    # api.project.get_meta() only includes projectSettings.labelingInterface for
+    # overlay projects, not for multiview — so project_meta.labeling_interface is
+    # unreliable for multiview detection.  Use project_info.settings instead:
+    # multiview is indicated by multiView.enabled == True; overlay by labelingInterface.
+    api_settings = {}
     if project_info is not None and isinstance(project_info.settings, dict):
-        raw_mv = project_info.settings.get("multiView")
-        if isinstance(raw_mv, dict):
-            api_mv = raw_mv
+        api_settings = project_info.settings
+
+    api_mv = api_settings.get("multiView") or {}
+    if not isinstance(api_mv, dict):
+        api_mv = {}
+
+    is_multiview = bool(api_mv.get("enabled", False))
+    is_overlay = not is_multiview and str(api_settings.get("labelingInterface") or "") == "overlay"
 
     # Build a minimal projectSettings containing only SDK-supported fields.
     project_settings: dict = {
