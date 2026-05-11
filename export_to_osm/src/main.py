@@ -146,21 +146,31 @@ def main() -> None:
     project_meta_json = api.project.get_meta(project_id)
     project_info = api.project.get_info_by_id(project_id)
 
-    # Merge API project settings with required defaults.
-    # The Supervisely SDK schema-validates projectSettings and requires both
-    # "multiView" and "labelingInterface" to always be present.
-    project_settings = {}
+    # Determine the actual labeling interface from the parsed project meta.
+    project_meta = sly.ProjectMeta.from_json(project_meta_json)
+    labeling_interface = str(project_meta.labeling_interface or "")
+    is_multiview = labeling_interface == "multi_view"
+    is_overlay = labeling_interface == "overlay"
+
+    # For multiview projects, preserve tagName/tagId from the API settings.
+    api_mv = {}
     if project_info is not None and isinstance(project_info.settings, dict):
-        project_settings = dict(project_info.settings)
-    if "multiView" not in project_settings:
-        project_settings["multiView"] = {
-            "enabled": False,
-            "tagName": None,
-            "tagId": None,
-            "isSynced": False,
+        raw_mv = project_info.settings.get("multiView")
+        if isinstance(raw_mv, dict):
+            api_mv = raw_mv
+
+    # Build a minimal projectSettings containing only SDK-supported fields.
+    project_settings: dict = {
+        "multiView": {
+            "enabled": is_multiview,
+            "tagName": api_mv.get("tagName") if is_multiview else None,
+            "tagId": api_mv.get("tagId") if is_multiview else None,
+            "isSynced": api_mv.get("isSynced", False) if is_multiview else False,
         }
-    if "labelingInterface" not in project_settings:
-        project_settings["labelingInterface"] = "default"
+    }
+    if is_overlay:
+        project_settings["labelingInterface"] = "overlay"
+
     project_meta_json["projectSettings"] = project_settings
 
     meta_path = export_dir / "meta.json"
