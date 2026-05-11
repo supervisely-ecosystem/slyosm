@@ -2086,6 +2086,12 @@ def export_dataset_to_supervisely_dir(
     osm_dir.mkdir(parents=True, exist_ok=True)
     meta_dir.mkdir(parents=True, exist_ok=True)
 
+    if dataset_custom_data:
+        custom_data_path = output_dir / "custom_data.json"
+        custom_data_path.write_text(
+            json.dumps(dataset_custom_data, indent=2), encoding="utf-8"
+        )
+
     overlay_dir: Optional[Path] = None
     if is_overlay:
         overlay_dir = output_dir / "overlay"

@@ -22,4 +22,4 @@ jobs:
       RELEASE_VERSION: ${{ github.ref_name }}
       RELEASE_DESCRIPTION: "'${{ github.ref_name }}' branch release"
       RELEASE_TYPE: release-branch
-      SUBAPP_PATHS: "import_osm, export_to_osm"
+      SUBAPP_PATHS: "import_osm, export_to_osm, import_images_with_osm"

@@ -18,4 +18,4 @@ jobs:
       RELEASE_VERSION: ""
       RELEASE_DESCRIPTION: ""
       RELEASE_TYPE: publish
-      SUBAPP_PATHS: "import_osm, export_to_osm"
+      SUBAPP_PATHS: "import_osm, export_to_osm, import_images_with_osm"
